@@ -203,6 +203,8 @@ class ProgressManager:
             if "field_updates" not in progress_info:
                 progress_info["field_updates"] = {}
             progress_info["field_updates"][field_name] = field_value
+            # Field updates count as activity for clients' stall detection
+            progress_info["last_update"] = time.time()
             self._save_progress_data(session_id, progress_info)
         
         # Also try to send via WebSocket if available

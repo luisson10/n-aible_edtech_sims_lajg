@@ -54,7 +54,12 @@ export default function PDFProgressTracker({
   const consecutive404sRef = useRef<number>(0);
   const maxConsecutive404s = 10; // Stop after 10 consecutive 404s (10 seconds)
   const pollingStartTimeRef = useRef<number>(0);
-  const maxPollingDuration = 5 * 60 * 1000; // Stop after 5 minutes
+  const lastActivityTimeRef = useRef<number>(0);
+  const lastProgressSnapshotRef = useRef<string>('');
+  // Long pipelines (LLM extraction + image generation) legitimately run past
+  // 5 minutes, so only fail when progress stops advancing — not on total time.
+  const maxStallDuration = 5 * 60 * 1000; // Stop after 5 minutes without a progress update
+  const maxPollingDuration = 30 * 60 * 1000; // Absolute safety ceiling
 
   const pollProgress = async () => {
     if (!sessionId) return;
@@ -63,6 +68,15 @@ export default function PDFProgressTracker({
     const now = Date.now();
     if (pollingStartTimeRef.current > 0 && (now - pollingStartTimeRef.current) > maxPollingDuration) {
       const errorMsg = 'Session timeout: Progress polling exceeded maximum duration';
+      setPollingError(errorMsg);
+      onError?.(errorMsg);
+      stopPolling();
+      return;
+    }
+
+    // Check if progress has stalled (no new updates from the backend)
+    if (lastActivityTimeRef.current > 0 && (now - lastActivityTimeRef.current) > maxStallDuration) {
+      const errorMsg = 'Session timeout: processing stalled — no progress updates received for 5 minutes';
       setPollingError(errorMsg);
       onError?.(errorMsg);
       stopPolling();
@@ -115,6 +129,14 @@ export default function PDFProgressTracker({
       
       setProgressData(data);
       setPollingError(null);
+
+      // Register activity whenever the backend reports anything new, so the
+      // stall detector only fires when processing is genuinely stuck
+      const progressSnapshot = `${data.overall_progress}|${data.current_stage}|${data.message}|${data.timestamp}`;
+      if (progressSnapshot !== lastProgressSnapshotRef.current) {
+        lastProgressSnapshotRef.current = progressSnapshot;
+        lastActivityTimeRef.current = Date.now();
+      }
 
       // Extract and pass simulation_id if present
       if (data.simulation_id) {
@@ -174,6 +196,8 @@ export default function PDFProgressTracker({
     setPollingError(null);
     consecutive404sRef.current = 0;
     pollingStartTimeRef.current = Date.now();
+    lastActivityTimeRef.current = Date.now();
+    lastProgressSnapshotRef.current = '';
     
     // Poll immediately
     pollProgress();
@@ -190,6 +214,8 @@ export default function PDFProgressTracker({
     setIsPolling(false);
     consecutive404sRef.current = 0;
     pollingStartTimeRef.current = 0;
+    lastActivityTimeRef.current = 0;
+    lastProgressSnapshotRef.current = '';
   };
 
   useEffect(() => {

@@ -179,6 +179,9 @@ api_keys.txt
 .local/
 local_settings.py
 
+# Local agent skill registry (auto-generated)
+.atl/
+
 # Setup completion flag
 .setup_completed
 

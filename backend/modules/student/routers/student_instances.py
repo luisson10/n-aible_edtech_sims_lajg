@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from common.db.core import get_db
-from common.db.models import User, StudentSimulationInstance, CohortSimulation, CohortStudent, Cohort, Simulation
+from common.db.models import User, StudentSimulationInstance, CohortSimulation, CohortStudent, Cohort, Simulation, SimulationScene
 from app.dependencies import require_student, get_current_user
 
 # Import UserProgress with graceful handling
@@ -373,6 +373,21 @@ async def get_student_simulation_instances(
                 detail="Failed to fetch simulation instances"
             ) from query_error
         
+        simulation_ids = [
+            instance.cohort_assignment.simulation_id
+            for instance in instances
+            if instance.cohort_assignment and instance.cohort_assignment.simulation_id
+        ]
+        scene_image_by_simulation_id = {}
+        if simulation_ids:
+            scene_images = db.query(SimulationScene).filter(
+                SimulationScene.simulation_id.in_(simulation_ids),
+                SimulationScene.image_url.isnot(None),
+                SimulationScene.deleted_at.is_(None)
+            ).order_by(SimulationScene.simulation_id, SimulationScene.scene_order).all()
+            for scene in scene_images:
+                scene_image_by_simulation_id.setdefault(scene.simulation_id, scene.image_url)
+        
         # Build response with simulation details
         # Filter out instances with deleted simulations as a safeguard
         result = []
@@ -411,6 +426,7 @@ async def get_student_simulation_instances(
                         "id": simulation.id,
                         "title": simulation.title,
                         "description": simulation.description,
+                        "image_url": scene_image_by_simulation_id.get(simulation.id),
                         "is_draft": simulation.is_draft,
                         "status": simulation.status
                     } if simulation else None,

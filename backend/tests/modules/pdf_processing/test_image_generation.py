@@ -56,6 +56,30 @@ async def test_generate_and_store_image_success(mock_settings, mock_openai_respo
             call_kwargs = mock_client.images.generate.call_args[1]
             assert call_kwargs["model"] == IMAGE_MODEL
             assert call_kwargs["quality"] == IMAGE_QUALITY
+            assert "background" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_generate_and_store_image_with_transparent_background(mock_settings, mock_openai_response):
+    """Personas may request transparent backgrounds; scenes should not."""
+    with patch('openai.OpenAI') as mock_openai:
+        mock_client = Mock()
+        mock_client.images.generate = Mock(return_value=mock_openai_response)
+        mock_openai.return_value = mock_client
+
+        with patch('common.services.s3_service.s3_service.upload_from_bytes',
+                   new_callable=AsyncMock) as mock_upload:
+            mock_upload.return_value = "https://n-aible.s3.us-east-2.amazonaws.com/generated/avatars/abc.png"
+
+            result = await _generate_and_store_image(
+                "a portrait",
+                "generated/avatars",
+                "test image",
+                background="transparent",
+            )
+
+            assert result.endswith(".png")
+            assert mock_client.images.generate.call_args[1]["background"] == "transparent"
 
 
 @pytest.mark.asyncio
@@ -204,9 +228,37 @@ async def test_generate_persona_avatar_unsafe_success(mock_settings):
         prompt, prefix, _ = mock_store.call_args[0]
         assert "John Doe" in prompt
         assert "CEO" in prompt
-        assert "Experienced leader" in prompt
+        assert "Waist-up" in prompt
+        assert "Professional business" not in prompt
         assert prefix == "generated/avatars"
+        assert mock_store.call_args.kwargs.get("background") == "transparent"
 
+
+@pytest.mark.asyncio
+async def test_generate_persona_avatar_includes_personality_cues(mock_settings):
+    """Test Big Five traits influence the avatar prompt"""
+    with patch('modules.pdf_processing.image_generation_service._generate_and_store_image',
+               new_callable=AsyncMock) as mock_store:
+        mock_store.return_value = "https://n-aible.s3.us-east-2.amazonaws.com/generated/avatars/abc.png"
+
+        await _generate_persona_avatar_unsafe(
+            persona_name="Alex Rivera",
+            persona_role="community organizer",
+            personality_traits={
+                "openness": 9,
+                "conscientiousness": 4,
+                "extraversion": 8,
+                "agreeableness": 9,
+                "neuroticism": 3,
+            },
+        )
+
+        prompt = mock_store.call_args[0][0]
+        assert "Alex Rivera" in prompt
+        assert "community organizer" in prompt
+        assert "waist" in prompt.lower()
+        assert "warm" in prompt.lower() or "empathetic" in prompt.lower() or "engaging" in prompt.lower()
+        assert mock_store.call_args.kwargs.get("background") == "transparent"
 
 @pytest.mark.asyncio
 async def test_generate_persona_avatar_unsafe_no_api_key(monkeypatch):

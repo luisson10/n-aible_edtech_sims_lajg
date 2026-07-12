@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Image generation configuration
 OPENAI_API_KEY = getattr(settings, 'openai_api_key', None)
-IMAGE_MODEL = "gpt-image-2"
+IMAGE_MODEL = "gpt-image-1-mini"  # supports transparent backgrounds (gpt-image-2 does not)
 IMAGE_QUALITY = "high"
 IMAGE_SIZE = "1024x1024"
 MAX_CONCURRENT_IMAGES = 10  # Limit concurrent image generations for scenes
@@ -32,6 +32,108 @@ _image_semaphore: Optional[asyncio.Semaphore] = None
 
 # Log configuration on module load
 logger.info(f"[IMAGE] OpenAI image configuration loaded: model={IMAGE_MODEL}, API Key available = {bool(OPENAI_API_KEY)}")
+
+# Visual cues for Big Five traits (1–10) — used to shape expression, posture, and styling
+_VISUAL_TRAIT_CUES: Dict[str, Dict[str, str]] = {
+    "openness": {
+        "very low": "conventional, practical look",
+        "low": "understated, traditional styling",
+        "moderate": "balanced everyday appearance",
+        "high": "curious expression, slightly creative or expressive styling",
+        "very high": "imaginative presence, unconventional or artistic styling cues",
+    },
+    "conscientiousness": {
+        "very low": "casual, loosely put-together look",
+        "low": "relaxed, informal grooming",
+        "moderate": "neat but not rigid presentation",
+        "high": "polished, intentional grooming and outfit",
+        "very high": "immaculately put-together, precise appearance",
+    },
+    "extraversion": {
+        "very low": "reserved posture, quiet closed-off energy",
+        "low": "soft presence, restrained expression",
+        "moderate": "approachable, natural demeanor",
+        "high": "open body language, engaging warm expression",
+        "very high": "confident, animated, highly expressive presence",
+    },
+    "agreeableness": {
+        "very low": "sharp, assertive expression; competitive edge",
+        "low": "candid, firm look; not overly soft",
+        "moderate": "friendly but grounded expression",
+        "high": "warm, empathetic, inviting expression",
+        "very high": "very kind, gentle, accommodating face",
+    },
+    "neuroticism": {
+        "very low": "very calm, steady, unflappable composure",
+        "low": "composed, relaxed facial tension",
+        "moderate": "generally steady expression",
+        "high": "subtle tension or worry in the eyes",
+        "very high": "visibly anxious or emotionally reactive look",
+    },
+}
+
+
+def _big_five_score_to_level(score: int) -> str:
+    """Convert a 1–10 Big Five score to a descriptive level label."""
+    if score <= 2:
+        return "very low"
+    if score <= 4:
+        return "low"
+    if score <= 6:
+        return "moderate"
+    if score <= 8:
+        return "high"
+    return "very high"
+
+
+def _personality_visual_cues(personality_traits: Optional[Dict[str, Any]]) -> str:
+    """
+    Turn Big Five personality_traits into short visual descriptors for the image prompt.
+    Falls back gracefully if traits are missing or malformed.
+    """
+    if not isinstance(personality_traits, dict) or not personality_traits:
+        return ""
+
+    cues: List[str] = []
+    for trait, levels in _VISUAL_TRAIT_CUES.items():
+        raw = personality_traits.get(trait)
+        if raw is None:
+            continue
+        try:
+            score = int(raw)
+        except (TypeError, ValueError):
+            continue
+        level = _big_five_score_to_level(max(1, min(10, score)))
+        cues.append(levels[level])
+
+    return "; ".join(cues)
+
+
+def _build_persona_avatar_prompt(
+    persona_name: str,
+    persona_role: str,
+    personality_traits: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Build a role-aware waist-up portrait prompt (not forced corporate/professional).
+    """
+    role = (persona_role or "person").strip() or "person"
+    name = (persona_name or "the subject").strip() or "the subject"
+    cues = _personality_visual_cues(personality_traits)
+
+    prompt = (
+        f"Waist-up portrait of {name}, who is a {role}. "
+        f"Show head, shoulders, and torso down to the waist. "
+        f"Clothing, grooming, and overall look should naturally fit someone in the role of {role} — "
+        f"do not default to a corporate business suit unless the role itself implies that. "
+    )
+    if cues:
+        prompt += f"Let their personality show through expression, posture, and styling: {cues}. "
+    prompt += (
+        "Photorealistic portrait of a single person, isolated subject, "
+        "transparent background, no text, no watermark, no border."
+    )
+    return prompt[:700]
 
 
 def _get_image_semaphore() -> asyncio.Semaphore:
@@ -48,7 +150,13 @@ def _get_image_semaphore() -> asyncio.Semaphore:
     return _image_semaphore
 
 
-async def _generate_and_store_image(prompt: str, s3_key_prefix: str, label: str) -> str:
+async def _generate_and_store_image(
+    prompt: str,
+    s3_key_prefix: str,
+    label: str,
+    *,
+    background: Optional[str] = None,
+) -> str:
     """
     Generate an image with the OpenAI GPT Image API and upload it to S3.
 
@@ -56,6 +164,8 @@ async def _generate_and_store_image(prompt: str, s3_key_prefix: str, label: str)
         prompt: Image generation prompt
         s3_key_prefix: S3 key prefix (e.g. "generated/avatars")
         label: Human-readable label for logging
+        background: Optional Images API background mode ("transparent" or "opaque").
+            Only personas should use transparent; scene images leave this unset/opaque.
 
     Returns:
         Permanent S3 URL, or empty string on failure.
@@ -69,16 +179,20 @@ async def _generate_and_store_image(prompt: str, s3_key_prefix: str, label: str)
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
+        generate_kwargs: Dict[str, Any] = {
+            "model": IMAGE_MODEL,
+            "prompt": prompt,
+            "size": IMAGE_SIZE,
+            "quality": IMAGE_QUALITY,
+            "n": 1,
+        }
+        if background:
+            generate_kwargs["background"] = background
+
         # GPT Image models return base64 data (no URL) - blocking call in executor
         response = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: client.images.generate(
-                model=IMAGE_MODEL,
-                prompt=prompt,
-                size=IMAGE_SIZE,
-                quality=IMAGE_QUALITY,
-                n=1,
-            )
+            lambda kwargs=generate_kwargs: client.images.generate(**kwargs),
         )
 
         image_bytes = base64.b64decode(response.data[0].b64_json)
@@ -194,38 +308,39 @@ async def _generate_persona_avatar_unsafe(
     persona_name: str,
     persona_role: str,
     background: str = "",
-    persona_id: Optional[int] = None
+    persona_id: Optional[int] = None,
+    personality_traits: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    Generate a professional avatar image for a persona using OpenAI's GPT Image API.
+    Generate a waist-up persona portrait using OpenAI's GPT Image API.
     Internal function without semaphore - use via generate_personas_with_avatars.
 
     Args:
         persona_name: Name of the persona
-        persona_role: Professional role/title
-        background: Background description (optional)
+        persona_role: Role/title (used to style clothing and look appropriately)
+        background: Unused legacy bio field (kept for call-site compatibility)
         persona_id: Optional persona ID (for reference, not used for upload here)
+        personality_traits: Optional Big Five traits dict (1–10 scores)
 
     Returns:
         Permanent S3 URL of the generated avatar, or empty string on failure.
     """
     logger.info(f"[AVATAR] Generating avatar for persona: {persona_name} ({persona_role})")
 
-    # Create a professional avatar prompt
-    avatar_prompt = f"Professional business portrait of {persona_name}, {persona_role}. "
-    if background:
-        avatar_prompt += f"{background}. "
-    avatar_prompt += "Corporate headshot style, professional attire, neutral background, high quality, portrait photography."
-
-    # Trim prompt to reasonable length
-    avatar_prompt = avatar_prompt[:500]
+    avatar_prompt = _build_persona_avatar_prompt(
+        persona_name=persona_name,
+        persona_role=persona_role,
+        personality_traits=personality_traits,
+    )
+    # background (bio) is intentionally not injected — it biased looks toward corporate/neutral scenes
 
     logger.info(f"[AVATAR] Prompt: {avatar_prompt}")
 
     return await _generate_and_store_image(
         avatar_prompt,
         "generated/avatars",
-        f"avatar '{persona_name}'"
+        f"avatar '{persona_name}'",
+        background="transparent",
     )
 
 
@@ -234,7 +349,8 @@ async def generate_personas_with_avatars(personas: List[Dict[str, Any]]) -> List
     Generate avatar images for multiple personas in parallel using OpenAI's GPT Image API.
 
     Args:
-        personas: List of persona dictionaries with 'name', 'role', and optionally 'background'
+        personas: List of persona dictionaries with 'name', 'role', and optionally
+            'personality_traits' (Big Five) / 'background'
 
     Returns:
         List of personas with 'image_url' added to each persona (or 'avatar_url' for compatibility)
@@ -252,20 +368,34 @@ async def generate_personas_with_avatars(personas: List[Dict[str, Any]]) -> List
     logger.info(f"[AVATAR] Using dynamic semaphore limit: {dynamic_limit}")
 
     # Inner function that uses the dynamic semaphore
-    async def generate_with_semaphore(persona_name: str, persona_role: str, background: str, persona_id: Optional[int] = None) -> str:
+    async def generate_with_semaphore(
+        persona_name: str,
+        persona_role: str,
+        background: str,
+        persona_id: Optional[int] = None,
+        personality_traits: Optional[Dict[str, Any]] = None,
+    ) -> str:
         async with persona_semaphore:
-            return await _generate_persona_avatar_unsafe(persona_name, persona_role, background, persona_id)
+            return await _generate_persona_avatar_unsafe(
+                persona_name,
+                persona_role,
+                background,
+                persona_id,
+                personality_traits,
+            )
 
     avatar_tasks = []
     for i, persona in enumerate(personas):
         if isinstance(persona, dict) and "name" in persona and "role" in persona:
             persona_id = persona.get("id") or persona.get("persona_id")
+            traits = persona.get("personality_traits") or persona.get("traits") or {}
             logger.info(f"[AVATAR] Creating avatar task for persona {i+1}: {persona.get('name', 'Unknown')}")
             task = generate_with_semaphore(
                 persona.get("name", ""),
                 persona.get("role", ""),
                 persona.get("background", ""),
-                persona_id
+                persona_id,
+                traits if isinstance(traits, dict) else {},
             )
             avatar_tasks.append(task)
         else:

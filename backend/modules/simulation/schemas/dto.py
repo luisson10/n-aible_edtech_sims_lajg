@@ -33,6 +33,28 @@ class SaveMessageRequest(BaseModel):
     sender_name: str
     message_content: str
     message_type: str  # "system", "orchestrator", etc.
+    session_id: Optional[str] = None
+
+
+class CodeExecutionRequest(BaseModel):
+    """Request model for executing code in a Daytona sandbox."""
+    user_progress_id: int
+    code: str
+    scene_id: int
+
+
+class CodeExecutionResponse(BaseModel):
+    """Response model for code execution results."""
+    success: bool
+    output: str
+    error: Optional[str] = None
+    sandbox_state: Optional[str] = None
+
+
+class SandboxStateResponse(BaseModel):
+    """Response model for sandbox state polling."""
+    sandbox_state: str
+    sandbox_id: Optional[str] = None
 
 
 class CodeExecutionRequest(BaseModel):

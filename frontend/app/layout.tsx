@@ -1,21 +1,19 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter, Crimson_Text, DM_Sans } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 import { AuthProvider } from "@/lib/auth-context"
 import RoleBasedRedirect from "@/components/RoleBasedRedirect"
 import DraggableFeedback from "@/components/DraggableFeedback"
 import { SonnerToaster } from "@/components/ui/sonner"
+import { ThemeProvider } from "@/components/theme-provider"
 
-const inter = Inter({ subsets: ["latin"] })
-const crimsonText = Crimson_Text({ 
-  weight: ["400", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-crimson-text"
-})
-const dmSans = DM_Sans({ 
-  subsets: ["latin"],
-  variable: "--font-dm-sans"
+const clashGrotesk = localFont({
+  src: "../public/fonts/ClashGrotesk-Variable.woff2",
+  display: "swap",
+  variable: "--font-clash-grotesk",
+  weight: "200 700",
+  fallback: ["Arial", "sans-serif"],
 })
 
 export const metadata: Metadata = {
@@ -34,17 +32,18 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} ${crimsonText.variable} ${dmSans.variable}`}>
-        <AuthProvider>
-          <RoleBasedRedirect>
-            {children}
-          </RoleBasedRedirect>
-          <DraggableFeedback />
-        </AuthProvider>
-        <SonnerToaster />
+    <html lang="en" className={clashGrotesk.variable} suppressHydrationWarning>
+      <body>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+          <AuthProvider>
+            <RoleBasedRedirect>
+              {children}
+            </RoleBasedRedirect>
+            <DraggableFeedback />
+          </AuthProvider>
+          <SonnerToaster />
+        </ThemeProvider>
       </body>
     </html>
   )
 }
-

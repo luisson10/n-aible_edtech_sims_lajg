@@ -373,20 +373,25 @@ async def get_student_simulation_instances(
                 detail="Failed to fetch simulation instances"
             ) from query_error
         
-        simulation_ids = [
+        simulation_ids = list({
             instance.cohort_assignment.simulation_id
             for instance in instances
             if instance.cohort_assignment and instance.cohort_assignment.simulation_id
-        ]
+        })
         scene_image_by_simulation_id = {}
+        scene_count_by_simulation_id = {}
         if simulation_ids:
-            scene_images = db.query(SimulationScene).filter(
+            scenes = db.query(
+                SimulationScene.simulation_id,
+                SimulationScene.image_url,
+            ).filter(
                 SimulationScene.simulation_id.in_(simulation_ids),
-                SimulationScene.image_url.isnot(None),
                 SimulationScene.deleted_at.is_(None)
             ).order_by(SimulationScene.simulation_id, SimulationScene.scene_order).all()
-            for scene in scene_images:
-                scene_image_by_simulation_id.setdefault(scene.simulation_id, scene.image_url)
+            for scene in scenes:
+                scene_count_by_simulation_id[scene.simulation_id] = scene_count_by_simulation_id.get(scene.simulation_id, 0) + 1
+                if scene.image_url:
+                    scene_image_by_simulation_id.setdefault(scene.simulation_id, scene.image_url)
         
         # Build response with simulation details
         # Filter out instances with deleted simulations as a safeguard
@@ -426,6 +431,11 @@ async def get_student_simulation_instances(
                         "id": simulation.id,
                         "title": simulation.title,
                         "description": simulation.description,
+                        "challenge": simulation.challenge,
+                        "industry": simulation.industry,
+                        "student_role": simulation.student_role,
+                        "learning_objectives": simulation.learning_objectives or [],
+                        "scene_count": scene_count_by_simulation_id.get(simulation.id, 0),
                         "image_url": scene_image_by_simulation_id.get(simulation.id),
                         "is_draft": simulation.is_draft,
                         "status": simulation.status
@@ -1046,4 +1056,3 @@ async def reset_simulation_from_instance(
     except Exception as e:
         logger.error(f"Error in reset_simulation_from_instance: {e!r}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to reset simulation: {e!s}") from e
-

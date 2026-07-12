@@ -6,6 +6,11 @@ Last updated: 2026-07-12
 
 ## Sources scanned
 
+- /Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.agents/skills
+- /Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.claude/skills
+- /Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.codex/skills
+- /Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.cursor/skills
+- /Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.openclaw/skills
 - /Users/luisaaronjimenez/.agents/skills
 - /Users/luisaaronjimenez/.claude/skills
 - /Users/luisaaronjimenez/.cursor/skills
@@ -37,6 +42,7 @@ Last updated: 2026-07-12
 | `judgment-day` | Trigger: judgment day, dual review, adversarial review, juzgar. Run blind dual review, fix confirmed issues, then re-judge. | user | `/Users/luisaaronjimenez/.claude/skills/judgment-day/SKILL.md` |
 | `livekit-agents` | Trigger: building, editing, reviewing, or debugging a LiveKit voice agent — AgentSession, Agent class, agent worker/server, turn detection, tools, multi-agent handoffs, telephony/SIP, or any livekit-agents (Python/Node) code. Build production-grade agents that follow current LiveKit docs. | user | `/Users/luisaaronjimenez/.claude/skills/livekit-agents/SKILL.md` |
 | `network-doc` | Trigger: network unreachable, packet loss to one host, can't reach this IP but internet works, stale route, hotspot broke my connection, traceroute fails for one host. Diagnose and clear stale /32 routes on macOS. | user | `/Users/luisaaronjimenez/.claude/skills/network-doc/SKILL.md` |
+| `n-aible-ui` | Trigger: UI component, page, frontend, reskin, design system. Build accessible n-aible UI with project tokens and shadcn primitives. | project | `/Users/luisaaronjimenez/Cursor Apps/n-aible_edtech_sims/.agents/skills/n-aible-ui/SKILL.md` |
 | `openai-docs` | Use when the user asks how to build with OpenAI products or APIs, asks about Codex itself or choosing Codex surfaces, needs up-to-date official documentation with citations, help choosing the latest model for a use case, or model upgrade and prompt-upgrade guidance; use OpenAI docs MCP tools for non-Codex docs questions, use the Codex manual helper first for broad Codex self-knowledge, and restrict fallback browsing to official OpenAI domains. | user | `/Users/luisaaronjimenez/.codex/skills/.system/openai-docs/SKILL.md` |
 | `plugin-creator` | Create and scaffold plugin directories for Codex with a required `.codex-plugin/plugin.json`, optional plugin folders/files, valid manifest defaults, and personal-marketplace entries by default. Use when Codex needs to create a new personal plugin, add optional plugin structure, generate or update marketplace entries for plugin ordering and availability metadata, or update an existing local plugin during development with the CLI-driven cachebuster and reinstall flow. | user | `/Users/luisaaronjimenez/.codex/skills/.system/plugin-creator/SKILL.md` |
 | `skill-creator` | Trigger: new skills, agent instructions, documenting AI usage patterns. Create LLM-first skills with valid frontmatter. | user | `/Users/luisaaronjimenez/.claude/skills/skill-creator/SKILL.md` |

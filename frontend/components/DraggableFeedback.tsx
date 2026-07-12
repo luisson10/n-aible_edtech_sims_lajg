@@ -161,7 +161,9 @@ export default function DraggableFeedback() {
         top: position.y,
         width: isOpen ? CARD_WIDTH : "auto", 
         height: isOpen ? CARD_HEIGHT : "auto",
-        zIndex: 9999,
+        // Keep global feedback below modal surfaces so it never obscures
+        // dialog or sheet actions.
+        zIndex: 40,
         // Simplified, natural expansion
         transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
       }}

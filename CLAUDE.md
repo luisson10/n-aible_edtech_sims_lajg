@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Skills
+
+For any frontend UI creation, reskin, or review, load and follow `.claude/skills/n-aible-ui/SKILL.md` before making changes. It links to the canonical repository-owned skill at `.agents/skills/n-aible-ui/SKILL.md`.
+
+The skill is registered here rather than in a new root `AGENTS.md`: this repository receives a richer external agent contract, and a sparse local file could shadow it. Tool-specific project skill roots link to the same canonical skill for cross-agent discovery.
+
 ## Project Overview
 
 AI Agent Education Platform - An innovative educational platform that transforms business case studies into immersive AI-powered simulations. The platform uses LangChain-based AI agents (personas) to create interactive learning experiences where students engage with AI characters through a linear simulation system orchestrated by the ChatOrchestrator.

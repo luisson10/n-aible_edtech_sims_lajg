@@ -4,10 +4,14 @@ Professor cohorts router - Thin HTTP layer for cohort management
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 from common.db.core import get_db
 from common.db.models import User
+from common.db.models.cohorts.cohort import Cohort, CohortSimulation
+from common.db.models.cohorts.student_instance import StudentSimulationInstance
+from common.db.models.publishing.simulation import Simulation
 from app.dependencies import require_professor
 from modules.cohorts.service import CohortService
 from modules.cohorts.schemas import (
@@ -29,6 +33,63 @@ def get_cohort_service(db: Session = Depends(get_db)) -> CohortService:
 
 
 # --- COHORT CRUD ENDPOINTS ---
+
+@router.get("/dashboard/ready-for-grading")
+async def get_ready_for_grading(
+    current_user: User = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    """Return professor-owned assignments with ungraded completed submissions.
+
+    This deliberately uses one grouped query. `ready_count` means a completed or
+    submitted student instance that has not received a professor grade yet.
+    """
+    ready = and_(
+        StudentSimulationInstance.status.in_(("completed", "submitted")),
+        StudentSimulationInstance.graded_at.is_(None),
+    )
+    rows = (
+        db.query(
+            CohortSimulation.id.label("assignment_id"),
+            Cohort.unique_id.label("cohort_unique_id"),
+            Cohort.title.label("cohort_title"),
+            Simulation.id.label("simulation_id"),
+            Simulation.title.label("simulation_title"),
+            CohortSimulation.due_date,
+            func.sum(case((ready, 1), else_=0)).label("ready_count"),
+        )
+        .join(Cohort, Cohort.id == CohortSimulation.cohort_id)
+        .join(Simulation, Simulation.id == CohortSimulation.simulation_id)
+        .outerjoin(
+            StudentSimulationInstance,
+            StudentSimulationInstance.cohort_assignment_id == CohortSimulation.id,
+        )
+        .filter(Cohort.created_by == current_user.id)
+        .group_by(
+            CohortSimulation.id,
+            Cohort.unique_id,
+            Cohort.title,
+            Simulation.id,
+            Simulation.title,
+            CohortSimulation.due_date,
+        )
+        .having(func.sum(case((ready, 1), else_=0)) > 0)
+        .order_by(func.sum(case((ready, 1), else_=0)).desc(), Cohort.title.asc())
+        .all()
+    )
+    items = [
+        {
+            "assignment_id": row.assignment_id,
+            "cohort_unique_id": row.cohort_unique_id,
+            "cohort_title": row.cohort_title,
+            "simulation_id": row.simulation_id,
+            "simulation_title": row.simulation_title,
+            "due_date": row.due_date,
+            "ready_count": int(row.ready_count or 0),
+        }
+        for row in rows
+    ]
+    return {"total_ready": sum(item["ready_count"] for item in items), "assignments": items}
 
 @router.get("", response_model=List[CohortListResponse])
 @router.get("/", response_model=List[CohortListResponse])

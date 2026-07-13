@@ -369,7 +369,8 @@ export const apiClient = {
       
       const allScenarios = await response.json()
       
-      // Map to frontend format
+      // Preserve the rich publishing contract; dashboard previews depend on
+      // attributes that used to be discarded by this adapter.
       const mappedScenarios = allScenarios.map((scenario: any) => {
         const getDisplayStatus = (backendStatus: string, isDraft: boolean) => {
           if (backendStatus === 'draft') return 'Draft'
@@ -380,6 +381,7 @@ export const apiClient = {
         }
         
         return {
+          ...scenario,
           id: scenario.id,
           title: scenario.title,
           description: scenario.description,
@@ -388,7 +390,9 @@ export const apiClient = {
             month: 'short', 
             day: 'numeric' 
           }),
-          students: scenario.personas?.length || 0,
+          persona_count: scenario.personas?.length || 0,
+          scene_count: scenario.scenes?.length || 0,
+          cover_image_url: scenario.scenes?.find((scene: any) => scene.image_url)?.image_url || null,
           created_at: scenario.created_at,
           is_draft: scenario.is_draft,
           published_version_id: scenario.published_version_id,
@@ -437,6 +441,12 @@ export const apiClient = {
   // Cohort methods
   getCohorts: async (): Promise<any[]> => {
     const response = await apiRequest('/professor/cohorts/')
+    return response.json()
+  },
+
+  getReadyForGrading: async (): Promise<any> => {
+    const response = await apiRequest('/professor/cohorts/dashboard/ready-for-grading')
+    if (!response.ok) throw new Error('Failed to load grading queue')
     return response.json()
   },
 

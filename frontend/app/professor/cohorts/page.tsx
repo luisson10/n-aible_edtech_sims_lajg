@@ -48,6 +48,7 @@ export default function Cohorts() {
   
   // OPTIMIZATION: Prevent duplicate fetches (React StrictMode protection)
   const fetchInitiatedRef = useRef(false)
+  const deepLinkHydratedRef = useRef<string | null>(null)
   
   const [activeFilter, setActiveFilter] = useState("All")
   const [searchTerm, setSearchTerm] = useState("")
@@ -150,6 +151,82 @@ export default function Cohorts() {
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (searchParams.get('create') !== '1') return
+    setShowCreateModal(true)
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete('create')
+    router.replace(`/professor/cohorts${next.size ? `?${next.toString()}` : ''}`, { scroll: false })
+  }, [searchParams, router])
+
+  // Hydrate shared dashboard links in dependency order: cohort, tab, assignment.
+  // The URL remains intact so refresh, back, and sharing preserve the view.
+  useEffect(() => {
+    const cohortId = searchParams.get('cohort')
+    const targetKey = `${cohortId || ''}|${searchParams.get('tab') || ''}|${searchParams.get('assignment') || ''}`
+    if (!cohortId) {
+      // Only clear views that were owned by a previous URL deep link. Manual
+      // cohort navigation never sets this ref and therefore remains untouched.
+      if (deepLinkHydratedRef.current) {
+        deepLinkHydratedRef.current = null
+        setSelectedCohort(null)
+        setCohortDetails(null)
+        setCohortStudents([])
+        setCohortSimulations([])
+        setSelectedSimulation(null)
+        setStudentInstances([])
+        setShowStudentProgressView(false)
+        setActiveTab('students')
+      }
+      return
+    }
+    if (loading || deepLinkHydratedRef.current === targetKey) return
+    const cohort = cohorts.find(item => String(item.unique_id) === cohortId)
+    if (!cohort) return
+    deepLinkHydratedRef.current = targetKey
+    ;(async () => {
+      try {
+        setLoadingDetails(true)
+        setSelectedCohort(cohort)
+        const [details, students, simulations] = await Promise.all([
+          apiClient.getCohort(cohort.unique_id),
+          apiClient.getCohortStudents(cohort.unique_id).catch(() => []),
+          apiClient.getCohortSimulations(cohort.unique_id).catch(() => []),
+        ])
+        if (deepLinkHydratedRef.current !== targetKey) return
+        setCohortDetails(details)
+        setCohortStudents(students)
+        setCohortSimulations(simulations)
+        const requestedTab = searchParams.get('tab')
+        if (requestedTab && ['students', 'simulations', 'analytics', 'settings'].includes(requestedTab)) {
+          setActiveTab(requestedTab)
+        } else {
+          setActiveTab('students')
+        }
+        const assignmentId = Number(searchParams.get('assignment'))
+        const assignment = simulations.find((item: any) => item.id === assignmentId)
+        if (assignment && requestedTab === 'simulations') {
+          setSelectedSimulation(assignment)
+          setShowStudentProgressView(true)
+          const instances = await apiClient.getSimulationAssignmentInstances(assignment.id)
+          if (deepLinkHydratedRef.current !== targetKey) return
+          const approvedIds = new Set(students.filter((item: any) => item.status === 'approved').map((item: any) => item.student_id))
+          setStudentInstances(instances.filter((item: any) => approvedIds.has(item.student_id)))
+        } else {
+          setSelectedSimulation(null)
+          setStudentInstances([])
+          setShowStudentProgressView(false)
+        }
+      } catch (err) {
+        console.error('Failed to open dashboard grading link:', err)
+        deepLinkHydratedRef.current = null
+        setError('Failed to open the linked grading queue')
+      } finally {
+        if (deepLinkHydratedRef.current === targetKey) setLoadingDetails(false)
+      }
+    })()
+  }, [cohorts, loading, searchParams])
 
   // Clear selected students when tab changes or filters change
   useEffect(() => {

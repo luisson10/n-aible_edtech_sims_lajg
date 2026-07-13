@@ -2,42 +2,32 @@
 
 import { useState, useCallback } from "react"
 import { apiClient } from "@/lib/api"
+import type { StudentSimulationInstance } from "@/lib/student-simulation"
 
-interface Cohort {
+export interface StudentCohort {
   id: number
   unique_id: string
   title: string
-  description?: string
-  professor?: { name: string }
+  description?: string | null
+  course_code?: string | null
+  semester?: string | null
+  year?: number | null
+  max_students?: number | null
+  created_at?: string | null
+  professor?: { id?: number | null; name: string; email?: string }
   is_active: boolean
+  status?: string | null
   student_count?: number
-  enrollment_date?: string
+  simulation_count?: number
+  enrollment_date?: string | null
 }
 
-interface SimulationInstance {
-  id: number
-  unique_id: string
-  status: string
-  completion_percentage: number
-  created_at: string
-  cohort_assignment?: {
-    simulation_id: number
-    due_date?: string
-    is_required?: boolean
-    simulation?: {
-      title: string
-      description: string
-      is_draft?: boolean
-    }
-  }
-}
-
-interface CohortWithSimulations extends Cohort {
-  simulations: any[]
+export interface StudentCohortWithSimulations extends StudentCohort {
+  simulations: StudentSimulationInstance[]
 }
 
 export function useStudentCohorts() {
-  const [cohorts, setCohorts] = useState<CohortWithSimulations[]>([])
+  const [cohorts, setCohorts] = useState<StudentCohortWithSimulations[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,8 +49,9 @@ export function useStudentCohorts() {
       
       // Create a map of cohort_id -> instances for efficient lookup
       // Instances include cohort_assignment.cohort.id in the response
-      const instancesByCohortId = new Map<number, SimulationInstance[]>()
-      for (const instance of allInstances || []) {
+      const instanceList: StudentSimulationInstance[] = Array.isArray(allInstances) ? allInstances : allInstances?.instances || []
+      const instancesByCohortId = new Map<number, StudentSimulationInstance[]>()
+      for (const instance of instanceList) {
         const cohortId = instance.cohort_assignment?.cohort?.id
         if (cohortId) {
           if (!instancesByCohortId.has(cohortId)) {
@@ -71,25 +62,11 @@ export function useStudentCohorts() {
       }
       
       // Map cohorts with their instances (no additional API calls needed)
-      const cohortsWithSimulations = (cohortsData || []).map((cohort: Cohort) => {
+      const cohortList: StudentCohort[] = Array.isArray(cohortsData) ? cohortsData : cohortsData?.cohorts || []
+      const cohortsWithSimulations = cohortList.map((cohort) => {
         const instances = instancesByCohortId.get(cohort.id) || []
         
-        // Transform instances to match expected format
-        const simulations = instances.map((instance: SimulationInstance) => ({
-          id: instance.id,
-          unique_id: instance.unique_id, // Important for navigation!
-          simulation_id: instance.cohort_assignment?.simulation_id,
-          title: instance.cohort_assignment?.simulation?.title || 'Untitled Simulation',
-          description: instance.cohort_assignment?.simulation?.description || '',
-          status: instance.status, // not_started, in_progress, completed, submitted, graded
-          progress: instance.completion_percentage || 0,
-          assigned_at: instance.created_at,
-          due_date: instance.cohort_assignment?.due_date,
-          is_required: instance.cohort_assignment?.is_required,
-          is_draft: instance.cohort_assignment?.simulation?.is_draft
-        }))
-        
-        return { ...cohort, simulations }
+        return { ...cohort, simulations: instances }
       })
       
       setCohorts(cohortsWithSimulations)
@@ -111,4 +88,3 @@ export function useStudentCohorts() {
     refreshCohorts: fetchCohorts // Alias for clarity
   }
 }
-

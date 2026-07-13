@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = getattr(settings, 'openai_api_key', None)
 IMAGE_MODEL = "gpt-image-1-mini"  # supports transparent backgrounds (gpt-image-2 does not)
 IMAGE_QUALITY = "high"
-IMAGE_SIZE = "1024x1024"
+PERSONA_IMAGE_SIZE = "1024x1024"
+SCENE_IMAGE_SIZE = "1536x1024"  # landscape environment / backdrop
+IMAGE_SIZE = PERSONA_IMAGE_SIZE  # backward-compatible default
 MAX_CONCURRENT_IMAGES = 10  # Limit concurrent image generations for scenes
 
 # Global semaphore for image generation rate limiting (scenes) - lazily initialized
@@ -136,6 +138,26 @@ def _build_persona_avatar_prompt(
     return prompt[:700]
 
 
+def _build_scene_background_prompt(scene_title: str, scene_description: str) -> str:
+    """
+    Build a first-person landscape environment prompt for a simulation scene backdrop.
+    """
+    title = (scene_title or "Scene").strip() or "Scene"
+    description = (scene_description or "").strip()
+    # Keep enough scene detail without blowing the prompt budget
+    detail = description[:280] if description else "an immersive setting that matches the scene title"
+
+    return (
+        f"Wide landscape environment background for a scene titled \"{title}\". "
+        f"First-person point of view of the space a participant would see while standing in this scene: {detail}. "
+        f"This is a backdrop / establishing environment shot — empty of people by default. "
+        f"Do not include people, faces, crowds, or human figures unless the scene description "
+        f"explicitly requires them (for example a crowded plaza, busy market, or packed auditorium). "
+        f"Photorealistic, cinematic wide-angle, atmosphere and place over characters, "
+        f"no text, no UI, no watermark, no border."
+    )[:700]
+
+
 def _get_image_semaphore() -> asyncio.Semaphore:
     """
     Get or create the image generation semaphore with lazy initialization.
@@ -156,6 +178,7 @@ async def _generate_and_store_image(
     label: str,
     *,
     background: Optional[str] = None,
+    size: Optional[str] = None,
 ) -> str:
     """
     Generate an image with the OpenAI GPT Image API and upload it to S3.
@@ -166,6 +189,7 @@ async def _generate_and_store_image(
         label: Human-readable label for logging
         background: Optional Images API background mode ("transparent" or "opaque").
             Only personas should use transparent; scene images leave this unset/opaque.
+        size: Optional image size override (defaults to IMAGE_SIZE / persona square).
 
     Returns:
         Permanent S3 URL, or empty string on failure.
@@ -182,7 +206,7 @@ async def _generate_and_store_image(
         generate_kwargs: Dict[str, Any] = {
             "model": IMAGE_MODEL,
             "prompt": prompt,
-            "size": IMAGE_SIZE,
+            "size": size or IMAGE_SIZE,
             "quality": IMAGE_QUALITY,
             "n": 1,
         }
@@ -222,7 +246,7 @@ async def generate_scene_image(
     scene_id: Optional[int] = None
 ) -> str:
     """
-    Generate an image for a scene using OpenAI's GPT Image API.
+    Generate a first-person landscape environment image for a scene.
 
     Args:
         scene_description: Description of the scene for image generation
@@ -236,11 +260,12 @@ async def generate_scene_image(
     logger.info(f"[IMAGE] Generating image for scene: {scene_title}")
 
     async with _get_image_semaphore():  # Rate limiting
-        image_prompt = f"Professional business illustration: {scene_title}. {scene_description[:100]}. Clean, modern corporate style, educational use."
+        image_prompt = _build_scene_background_prompt(scene_title, scene_description)
         return await _generate_and_store_image(
-            image_prompt[:400],  # Truncate to stay within limits
+            image_prompt,
             "generated/scenes",
-            f"scene image '{scene_title}'"
+            f"scene image '{scene_title}'",
+            size=SCENE_IMAGE_SIZE,
         )
 
 

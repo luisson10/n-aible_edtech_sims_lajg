@@ -11,8 +11,9 @@ export type StudentSimulationInstance = {
   cohort_assignment?: {
     due_date?: string | null
     is_required?: boolean
-    cohort?: { title?: string }
+    cohort?: { id?: number; unique_id?: string; title?: string }
     simulation?: {
+      id?: number
       title?: string
       description?: string
       challenge?: string | null
@@ -21,6 +22,8 @@ export type StudentSimulationInstance = {
       learning_objectives?: string[] | string | null
       scene_count?: number
       image_url?: string | null
+      is_draft?: boolean
+      status?: string | null
     }
   }
 }
@@ -46,6 +49,7 @@ export type StudentSimulationPreviewModel = {
   sceneCount: number
   activityAt: number
   dueAt: number | null
+  available: boolean
 }
 
 const normalizeObjectives = (value: string[] | string | null | undefined) => {
@@ -57,8 +61,11 @@ const normalizeObjectives = (value: string[] | string | null | undefined) => {
 export function toStudentSimulationPreview(instance: StudentSimulationInstance): StudentSimulationPreviewModel {
   const assignment = instance.cohort_assignment
   const simulation = assignment?.simulation
-  const status = instance.status || "assigned"
-  const progress = Math.max(0, Math.min(100, instance.completion_percentage ?? 0))
+  const status = normalizeStatus(instance.status)
+  const rawProgress = Number(instance.completion_percentage)
+  const progress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : 0
+  const dueTimestamp = assignment?.due_date ? new Date(assignment.due_date).getTime() : NaN
+  const available = !simulation?.is_draft
   const activityDate = instance.completed_at || instance.started_at || assignment?.due_date || instance.created_at
 
   return {
@@ -68,8 +75,8 @@ export function toStudentSimulationPreview(instance: StudentSimulationInstance):
     description: simulation?.description || "Step into a realistic scenario and make decisions that shape the outcome.",
     imageUrl: simulation?.image_url || "",
     status,
-    statusLabel: status === "in_progress" ? "In progress" : status === "not_started" ? "Ready" : status === "graded" ? "Graded" : status === "completed" ? "Awaiting grade" : status === "submitted" ? "Submitted" : "Assigned",
-    actionLabel: status === "not_started" ? "Start simulation" : status === "in_progress" ? "Continue simulation" : "Review simulation",
+    statusLabel: !available ? "Preparing" : status === "in_progress" ? "In progress" : status === "not_started" ? "Ready" : status === "graded" ? "Graded" : status === "completed" ? "Awaiting grade" : status === "submitted" ? "Submitted" : "Ready",
+    actionLabel: !available ? "Unavailable" : status === "in_progress" ? "Continue simulation" : ["completed", "submitted", "graded"].includes(status) ? "Review simulation" : "Start simulation",
     progress,
     score: instance.grade ?? instance.ai_grade ?? null,
     cohort: assignment?.cohort?.title || "Assigned simulation",
@@ -81,6 +88,12 @@ export function toStudentSimulationPreview(instance: StudentSimulationInstance):
     learningObjectives: normalizeObjectives(simulation?.learning_objectives),
     sceneCount: simulation?.scene_count || 0,
     activityAt: activityDate ? new Date(activityDate).getTime() : 0,
-    dueAt: assignment?.due_date ? new Date(assignment.due_date).getTime() : null,
+    dueAt: Number.isFinite(dueTimestamp) ? dueTimestamp : null,
+    available,
   }
+}
+
+const knownStatuses = new Set(["not_started", "in_progress", "completed", "submitted", "graded"])
+function normalizeStatus(value: string | null | undefined) {
+  return value && knownStatuses.has(value) ? value : "not_started"
 }

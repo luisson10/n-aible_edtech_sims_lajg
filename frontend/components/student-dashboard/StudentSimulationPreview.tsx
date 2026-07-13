@@ -81,7 +81,7 @@ function StudentSimulationPreviewContent({ simulation }: { simulation: StudentSi
 
         <div className="shrink-0 border-t bg-background/95 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-12px_32px_hsl(var(--background)/0.92)] backdrop-blur sm:px-8">
           <div className="mb-3 space-y-2"><div className="flex justify-between text-sm"><span className="text-muted-foreground">Your progress</span><span className="font-medium">{Math.round(simulation.progress)}%</span></div><Progress value={simulation.progress} aria-label={`${simulation.title} progress`} /></div>
-          <Button asChild size="lg" className="w-full"><Link href={simulation.href}>{simulation.actionLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          {simulation.available ? <Button asChild size="lg" className="w-full"><Link href={simulation.href}>{simulation.actionLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link></Button> : <Button size="lg" className="w-full" disabled>This simulation is preparing</Button>}
         </div>
       </>
 }

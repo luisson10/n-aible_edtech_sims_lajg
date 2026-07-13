@@ -13,6 +13,7 @@ from modules.pdf_processing.image_generation_service import (
     OPENAI_API_KEY,
     IMAGE_MODEL,
     IMAGE_QUALITY,
+    SCENE_IMAGE_SIZE,
 )
 
 
@@ -140,8 +141,10 @@ async def test_generate_scene_image_success(mock_settings):
         assert result == "https://n-aible.s3.us-east-2.amazonaws.com/generated/scenes/xyz.png"
         prompt, prefix, _ = mock_store.call_args[0]
         assert "Team Meeting" in prompt
+        assert "first-person" in prompt.lower() or "First-person" in prompt
+        assert "Professional business illustration" not in prompt
         assert prefix == "generated/scenes"
-
+        assert mock_store.call_args.kwargs.get("size") == SCENE_IMAGE_SIZE
 
 @pytest.mark.asyncio
 async def test_generate_scenes_with_images(mock_settings):

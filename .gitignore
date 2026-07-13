@@ -32,9 +32,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!frontend/lib/
-!frontend/lib/**
+# Python package lib (root only — do not match frontend/lib/)
+/lib/
 lib64/
 parts/
 sdist/

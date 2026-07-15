@@ -125,22 +125,27 @@ def _build_persona_avatar_prompt(
 
     prompt = (
         f"Waist-up portrait of {name}, who is a {role}. "
-        f"Show head, shoulders, and torso down to the waist. "
+        f"Show the full head, shoulders, and torso down to the waist. "
+        f"Center the person in the frame with generous empty margin on all sides — "
+        f"especially above the head and around the shoulders — so nothing is cropped or cut off "
+        f"(no clipped hair, forehead, elbows, or hands at the edges). "
+        f"Leave clear breathing room between the subject and every image border; "
+        f"do not fill the frame edge-to-edge. "
         f"Clothing, grooming, and overall look should naturally fit someone in the role of {role} — "
         f"do not default to a corporate business suit unless the role itself implies that. "
     )
     if cues:
         prompt += f"Let their personality show through expression, posture, and styling: {cues}. "
     prompt += (
-        "Photorealistic portrait of a single person, isolated subject, "
+        "Photorealistic portrait of a single person, isolated subject, centered composition, "
         "transparent background, no text, no watermark, no border."
     )
-    return prompt[:700]
+    return prompt[:900]
 
 
 def _build_scene_background_prompt(scene_title: str, scene_description: str) -> str:
     """
-    Build a first-person landscape environment prompt for a simulation scene backdrop.
+    Build a realistic first-person landscape environment prompt for a simulation scene backdrop.
     """
     title = (scene_title or "Scene").strip() or "Scene"
     description = (scene_description or "").strip()
@@ -149,7 +154,7 @@ def _build_scene_background_prompt(scene_title: str, scene_description: str) -> 
 
     return (
         f"Wide landscape environment background for a scene titled \"{title}\". "
-        f"First-person point of view of the space a participant would see while standing in this scene: {detail}. "
+        f"Realistic first-person point of view of the space a participant would see while standing in this scene: {detail}. "
         f"This is a backdrop / establishing environment shot — empty of people by default. "
         f"Do not include people, faces, crowds, or human figures unless the scene description "
         f"explicitly requires them (for example a crowded plaza, busy market, or packed auditorium). "
@@ -246,7 +251,7 @@ async def generate_scene_image(
     scene_id: Optional[int] = None
 ) -> str:
     """
-    Generate a first-person landscape environment image for a scene.
+    Generate a realistic first-person landscape environment image for a scene.
 
     Args:
         scene_description: Description of the scene for image generation

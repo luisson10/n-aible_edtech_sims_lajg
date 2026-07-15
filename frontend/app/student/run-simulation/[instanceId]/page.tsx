@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Send,
   Users,
@@ -31,7 +33,10 @@ import {
   Type,
   ChevronDown,
   ChevronUp,
-  PlayCircle
+  PlayCircle,
+  NotebookPen,
+  ListChecks,
+  Check
 } from "lucide-react"
 import { ChatMessages } from '@/components/ChatMessages'
 import { ChatInput } from '@/components/ChatInput'
@@ -1329,12 +1334,12 @@ export default function StudentSimulationChat() {
   const [turnCount, setTurnCount] = useState(0)
   const [inputBlocked, setInputBlocked] = useState(false)
   // Immersive UI state
-  const [selectedPersonas, setSelectedPersonas] = useState<string[]>([])
+  const [selectedPersonas, setSelectedPersonas] = useState<number[]>([])
   const [currentTurnStartIndex, setCurrentTurnStartIndex] = useState(0)
   const [showAllMessages, setShowAllMessages] = useState(false)
   const [showObjectiveModal, setShowObjectiveModal] = useState(false)
   const [showStartModal, setShowStartModal] = useState(true)
-  const [lastSpeakingPersona, setLastSpeakingPersona] = useState<string | null>(null)
+  const [activeSpeakingPersona, setActiveSpeakingPersona] = useState<string | null>(null)
   const [sceneIntroShown, setSceneIntroShown] = useState<Set<number>>(new Set())
   const [gradingData, setGradingData] = useState<any>(null)
   const [canSubmitForGrading, setCanSubmitForGrading] = useState(false)
@@ -1354,7 +1359,7 @@ export default function StudentSimulationChat() {
   }
   
   // New state for enhanced features
-  const [activeTab, setActiveTab] = useState<'conversation' | 'case-study' | 'grading' | 'code-editor' | 'resources'>('conversation')
+  const [activeTab, setActiveTab] = useState<'conversation' | 'grading' | 'code-editor' | 'resources'>('conversation')
   const [selectedPersona, setSelectedPersona] = useState<PersonaDetails | null>(null)
   const [showPersonaModal, setShowPersonaModal] = useState(false)
   const [showTimeoutModal, setShowTimeoutModal] = useState(false)
@@ -1363,6 +1368,10 @@ export default function StudentSimulationChat() {
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0)
   const [inputMode, setInputMode] = useState<'text' | 'voice'>('text')
   const [isInterfaceGreyed, setIsInterfaceGreyed] = useState(false)
+  const [sidePanelTab, setSidePanelTab] = useState<'briefing' | 'notes'>('briefing')
+  const [notes, setNotes] = useState('')
+  const [briefingHasMore, setBriefingHasMore] = useState(false)
+  const briefingScrollRef = useRef<HTMLDivElement>(null)
   // Persona bubble color utilities - expanded palette for better uniqueness
   const personaPalette = [
     'bg-rose-50 border-rose-200',
@@ -1458,28 +1467,110 @@ export default function StudentSimulationChat() {
   }
   const [currentTypingPersona, setCurrentTypingPersona] = useState<string>('')
 
-  // Persona card selection: click = toggle @mention in input
+  const getPersonaHandle = (persona: Persona) =>
+    persona.name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_().\-&]/g, '')
+
+  const getMentionTokens = (value: string) =>
+    Array.from(value.matchAll(/@([\w().\-&]+)/g), match => match[1].toLowerCase())
+
+  const selectedIdsFromInput = (value: string) => {
+    const personas = simulationData?.current_scene?.personas || []
+    const tokens = getMentionTokens(value)
+    if (tokens.includes('all')) return personas.map(persona => persona.id)
+    const tokenSet = new Set(tokens)
+    return personas.filter(persona => tokenSet.has(getPersonaHandle(persona))).map(persona => persona.id)
+  }
+
+  const stripKnownTargetMentions = (value: string) => {
+    const handles = new Set((simulationData?.current_scene?.personas || []).map(getPersonaHandle))
+    return value.replace(/@([\w().\-&]+)\s*/g, (match, token: string) =>
+      token.toLowerCase() === 'all' || handles.has(token.toLowerCase()) ? '' : match
+    ).replace(/@[\w().\-&]*$/, '').trim()
+  }
+
+  const syncTargetMentions = (currentInput: string, personaIds: number[], useAll = false) => {
+    const personas = simulationData?.current_scene?.personas || []
+    const selectedIds = new Set(personaIds)
+    const message = stripKnownTargetMentions(currentInput)
+    const targets = useAll && personaIds.length === personas.length
+      ? '@all'
+      : personas.filter(persona => selectedIds.has(persona.id)).map(persona => `@${getPersonaHandle(persona)}`).join(' ')
+    return [targets, message].filter(Boolean).join(' ') + (message ? '' : targets ? ' ' : '')
+  }
+
+  // Portrait selection is authoritative; keep the message target prefix in sync.
   const togglePersonaSelection = (persona: Persona) => {
-    const mentionId = persona.name.toLowerCase().replace(/\s+/g, '_')
     setSelectedPersonas(prev => {
-      if (prev.includes(mentionId)) {
-        setInput(cur => cur.replace(new RegExp(`@${mentionId}\\s*`, 'g'), '').trim())
-        return prev.filter(id => id !== mentionId)
-      } else {
-        setInput(cur => {
-          const base = cur.trimEnd()
-          return base ? `${base} @${mentionId} ` : `@${mentionId} `
-        })
-        return [...prev, mentionId]
-      }
+      const next = prev.includes(persona.id)
+        ? prev.filter(id => id !== persona.id)
+        : [...prev, persona.id]
+      setInput(cur => syncTargetMentions(cur, next))
+      return next
     })
   }
 
-  const clearPersonaSelection = () => setSelectedPersonas([])
+  const clearPersonaSelection = () => {
+    setSelectedPersonas([])
+    setInput(cur => stripKnownTargetMentions(cur))
+  }
+
+  const toggleAllPersonas = () => {
+    const personas = simulationData?.current_scene?.personas || []
+    const personaIds = personas.map(persona => persona.id)
+    const allSelected = personaIds.length > 0 && personaIds.every(id => selectedPersonas.includes(id))
+    const next = allSelected ? [] : personaIds
+    setSelectedPersonas(next)
+    setInput(cur => allSelected ? stripKnownTargetMentions(cur) : syncTargetMentions(cur, next, true))
+  }
+
+  const addPersonaTarget = (persona: Persona, currentInput: string, replacePartial = false) => {
+    const base = replacePartial ? currentInput.replace(/@[\w().\-&]*$/, '') : currentInput
+    setSelectedPersonas(prev => {
+      const next = prev.includes(persona.id) ? prev : [...prev, persona.id]
+      setInput(syncTargetMentions(base, next))
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (!instanceId || typeof window === 'undefined') return
+    setNotes(window.localStorage.getItem(`simulation-notes:${instanceId}`) || '')
+  }, [instanceId])
+
+  useEffect(() => {
+    if (!instanceId || typeof window === 'undefined') return
+    window.localStorage.setItem(`simulation-notes:${instanceId}`, notes)
+  }, [instanceId, notes])
+
+  useEffect(() => {
+    const scrollArea = briefingScrollRef.current
+    if (!scrollArea || sidePanelTab !== 'briefing') return
+    const updateIndicator = () => {
+      setBriefingHasMore(scrollArea.scrollHeight - scrollArea.scrollTop > scrollArea.clientHeight + 4)
+    }
+    updateIndicator()
+    const observer = new ResizeObserver(updateIndicator)
+    observer.observe(scrollArea)
+    window.addEventListener('resize', updateIndicator)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateIndicator)
+    }
+  }, [sidePanelTab, simulationData?.current_scene?.id])
 
   const simulationHasBegun = simulationData?.simulation_status === "in_progress"
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageBoxRef = useRef<HTMLDivElement>(null)
+  const streamAbortControllerRef = useRef<AbortController | null>(null)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      streamAbortControllerRef.current?.abort()
+    }
+  }, [])
 
   // Block input when grading tab is active (simulation complete)
   useEffect(() => {
@@ -1569,7 +1660,7 @@ export default function StudentSimulationChat() {
 **Objective:** ${scene.user_goal || 'Complete the interaction'}
 
 **Active Participants:**
-${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\s+/g, '_')}: ${persona.name} (${persona.role})`).join('\n')}
+${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona.name} (${persona.role})`).join('\n')}
 
 *You have ${scene.timeout_turns || 15} turns to achieve the objective.*`
   }
@@ -1810,18 +1901,9 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
           }
           // @all is valid, continue
         } else {
-          // Restrict @mentions to only personas in the current scene
-          // Generate both original and sanitized versions for backwards compatibility
-          const validPersonaMentions: string[] = []
-          simulationData.current_scene.personas.forEach(p => {
-            const original = p.name.toLowerCase().replace(/\s+/g, '_')
-            const sanitized = original.replace(/[^a-z0-9_]/g, '')
-            validPersonaMentions.push(original)
-            validPersonaMentions.push(sanitized)
-          })
-          // Also sanitize the mentionId for comparison
-          const sanitizedMentionId = mentionId.replace(/[^a-z0-9_]/g, '')
-          if (!validPersonaMentions.includes(mentionId) && !validPersonaMentions.includes(sanitizedMentionId)) {
+          // Restrict mentions to the same canonical handles used by every UI target control.
+          const validPersonaMentions = simulationData.current_scene.personas.map(getPersonaHandle)
+          if (!validPersonaMentions.includes(mentionId)) {
             alert('You can only @mention personas involved in this scene.')
             return
           }
@@ -1855,13 +1937,8 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
       const mentionMatch = trimmedInput.match(/@([\w().\-&]+)/)
       if (mentionMatch) {
         const mentionId = mentionMatch[1].toLowerCase()
-        const sanitizedMentionId = mentionId.replace(/[^a-z0-9_]/g, '')
         const mentionedPersona = simulationData.current_scene.personas.find(
-          p => {
-            const original = p.name.toLowerCase().replace(/\s+/g, '_')
-            const sanitized = original.replace(/[^a-z0-9_]/g, '')
-            return original === mentionId || sanitized === mentionId || sanitized === sanitizedMentionId
-          }
+          p => getPersonaHandle(p) === mentionId
         )
         if (mentionedPersona) {
           typingPersonaName = mentionedPersona.name
@@ -1871,7 +1948,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
     setTypingPersona(typingPersonaName)
     setCurrentTypingPersona(typingPersonaName)
     if (typingPersonaName !== "ChatOrchestrator" && typingPersonaName !== "All Personas") {
-      setLastSpeakingPersona(typingPersonaName)
+      setActiveSpeakingPersona(typingPersonaName)
     }
 
     // Grey out interface will be controlled by isStreaming state
@@ -1884,6 +1961,11 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
       setCanSubmitForGrading(false)
     }
 
+    const requestController = new AbortController()
+    streamAbortControllerRef.current = requestController
+    let flushPresentation: (() => Promise<void>) | null = null
+    let cancelPresentation: (() => void) | null = null
+
     try {
       // Use dedicated streaming endpoint through proxy
       const response = await fetch('/api/proxy/api/simulation/linear-chat-stream', {
@@ -1892,6 +1974,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
           'Content-Type': 'application/json',
         },
         credentials: 'include',
+        signal: requestController.signal,
         body: JSON.stringify({
           simulation_id: simulationData.simulation.id,
           user_id: 1,
@@ -1921,6 +2004,147 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
       // Map to track streaming text and message IDs for each persona (for @all messages)
       const personaStreamTexts: { [key: string]: string } = {}
       const personaMessageIds: { [key: string]: any } = {}
+      const finalizedPersonaKeys = new Set<string>()
+      const visibleStreamTexts: { [key: string]: string } = {}
+      const prefersReducedMotion = typeof window !== 'undefined'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      type PresentationTask =
+        | { kind: 'start'; messageId: any; personaName: string; personaId?: number }
+        | { kind: 'content'; messageId: any; content: string; personaName?: string; personaId?: number }
+        | { kind: 'done'; messageId: any; finalText: string; metadata: any; personaName?: string }
+
+      const presentationQueue: PresentationTask[] = []
+      let presentationWorker: Promise<void> | null = null
+      let presentationCancelled = false
+
+      const updatePresentedMessage = (messageId: any, text: string, metadata?: any) => {
+        if (!isMountedRef.current || requestController.signal.aborted) return
+        setMessages(prev => prev.map(msg =>
+          msg.id === messageId ? { ...msg, text, ...metadata } : msg
+        ))
+      }
+
+      const pendingPresentationCharacters = () => presentationQueue.reduce((total, task) => {
+        if (task.kind === 'content') return total + task.content.length
+        if (task.kind === 'done') return total + Math.max(0, task.finalText.length - (visibleStreamTexts[String(task.messageId)] || '').length)
+        return total
+      }, 0)
+
+      const revealContent = async (task: Extract<PresentationTask, { kind: 'content' }>) => {
+        const key = String(task.messageId)
+        let offset = 0
+        if (task.personaName && task.personaName !== 'ChatOrchestrator') {
+          setActiveSpeakingPersona(task.personaName)
+        }
+        setIsStreaming(true)
+        setStreamingMessageId(task.messageId)
+
+        while (offset < task.content.length) {
+          if (requestController.signal.aborted || presentationCancelled) return
+          const backlog = pendingPresentationCharacters() + (task.content.length - offset)
+          // Roughly 24 characters/second for normal replies, with a bounded catch-up
+          // rate so long or already-buffered responses do not take excessively long.
+          const charactersPerFrame = prefersReducedMotion ? task.content.length : backlog > 600 ? 4 : backlog > 240 ? 2 : 1
+          const next = task.content.slice(offset, offset + charactersPerFrame)
+          offset += next.length
+          visibleStreamTexts[key] = (visibleStreamTexts[key] || '') + next
+          updatePresentedMessage(task.messageId, visibleStreamTexts[key], task.personaName ? {
+            sender: task.personaName === 'ChatOrchestrator' ? 'System' : task.personaName,
+            persona_name: task.personaName,
+            persona_id: task.personaId
+          } : undefined)
+          if (!prefersReducedMotion && offset < task.content.length) {
+            await new Promise<void>(resolve => {
+              const onAbort = () => {
+                window.clearTimeout(timeout)
+                resolve()
+              }
+              const timeout = window.setTimeout(() => {
+                requestController.signal.removeEventListener('abort', onAbort)
+                resolve()
+              }, 42)
+              requestController.signal.addEventListener('abort', onAbort, { once: true })
+            })
+          }
+        }
+      }
+
+      const runPresentationQueue = () => {
+        if (presentationWorker) return
+        presentationWorker = (async () => {
+          while (presentationQueue.length > 0) {
+            const task = presentationQueue.shift()!
+            if (!isMountedRef.current || requestController.signal.aborted || presentationCancelled) continue
+            if (task.kind === 'start') {
+              visibleStreamTexts[String(task.messageId)] = ''
+              setActiveSpeakingPersona(task.personaName)
+              setMessages(prev => [...prev, {
+                id: task.messageId,
+                sender: task.personaName,
+                text: '',
+                timestamp: new Date(),
+                type: 'ai_persona',
+                persona_name: task.personaName,
+                persona_id: task.personaId,
+              }])
+              continue
+            }
+
+            if (task.kind === 'content') {
+              await revealContent(task)
+              continue
+            }
+
+            const key = String(task.messageId)
+            const visibleText = visibleStreamTexts[key] || ''
+            if (task.finalText !== visibleText) {
+              const remainder = task.finalText.startsWith(visibleText)
+                ? task.finalText.slice(visibleText.length)
+                : task.finalText
+              if (!task.finalText.startsWith(visibleText)) visibleStreamTexts[key] = ''
+              await revealContent({ kind: 'content', messageId: task.messageId, content: remainder, personaName: task.personaName, personaId: task.metadata.persona_id })
+            }
+            updatePresentedMessage(task.messageId, task.finalText, task.metadata)
+            setActiveSpeakingPersona(null)
+            setStreamingMessageId(null)
+            setIsStreaming(false)
+          }
+        })().finally(() => {
+          presentationWorker = null
+          if (presentationQueue.length > 0) runPresentationQueue()
+        })
+      }
+
+      const enqueuePresentation = (task: PresentationTask) => {
+        if (presentationCancelled) return
+        presentationQueue.push(task)
+        runPresentationQueue()
+      }
+
+      flushPresentation = async () => {
+        while (presentationWorker || presentationQueue.length > 0) {
+          if (presentationWorker) await presentationWorker
+        }
+      }
+      cancelPresentation = () => {
+        presentationCancelled = true
+        presentationQueue.length = 0
+        if (isMountedRef.current) {
+          setActiveSpeakingPersona(null)
+          setStreamingMessageId(null)
+          setIsStreaming(false)
+        }
+      }
+
+      const combineTerminalContent = (accumulated: string, terminalContent: unknown, fullContent: unknown) => {
+        if (typeof fullContent === 'string') return fullContent
+        if (typeof terminalContent !== 'string' || terminalContent.length === 0) return accumulated
+        if (!accumulated) return terminalContent
+        if (terminalContent.startsWith(accumulated)) return terminalContent
+        if (accumulated.endsWith(terminalContent)) return accumulated
+        return accumulated + terminalContent
+      }
       
       // Create a placeholder AI message for non-@all messages
       let aiMessageId: any = null
@@ -1937,23 +2161,32 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
           showLoadingBar: typingPersonaName === "ChatOrchestrator" && isBeginCommand
         }
         setMessages(prev => [...prev, placeholderMessage])
+        visibleStreamTexts[String(aiMessageId)] = ''
       }
       
       setIsTyping(false) // Hide typing indicator when streaming starts
       setIsStreaming(false) // Don't start streaming state yet - wait for first content
       setStreamingMessageId(aiMessageId) // Track the streaming message ID (null for @all)
+      let sseBuffer = ""
       
       if (reader) {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
           
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.substring(6)
+          // Network chunks do not necessarily align with SSE event boundaries. Keep
+          // partial events buffered so a JSON payload is never dropped mid-token.
+          sseBuffer += decoder.decode(value, { stream: true })
+          const events = sseBuffer.split(/\r?\n\r?\n/)
+          sseBuffer = events.pop() || ""
+
+          for (const event of events) {
+            const data = event
+              .split(/\r?\n/)
+              .filter(line => line.startsWith('data:'))
+              .map(line => line.replace(/^data:\s?/, ''))
+              .join('\n')
+            if (data) {
               try {
                 const parsed = JSON.parse(data)
                 
@@ -1974,44 +2207,28 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                     // Initialize streaming text for this persona if not exists
                     if (!personaStreamTexts[personaKey]) {
                       personaStreamTexts[personaKey] = ""
-                      setLastSpeakingPersona(personaKey)
                       // Create a new message for this persona
                       const personaMessageId = nextMessageId()
                       personaMessageIds[personaKey] = personaMessageId
-                      
-                      const personaPlaceholder: any = {
-                        id: personaMessageId,
-                        sender: personaKey,
-                        text: "",
-                        timestamp: new Date(),
-                        type: 'ai_persona',
-                        persona_name: personaKey,
-                        persona_id: parsed.persona_id,
-                      }
-                      setMessages(prev => [...prev, personaPlaceholder])
-                      setStreamingMessageId(personaMessageId)
+                      enqueuePresentation({ kind: 'start', messageId: personaMessageId, personaName: personaKey, personaId: parsed.persona_id })
                     }
                     
                     // Append streamed content to this persona's message
                     personaStreamTexts[personaKey] += parsed.content
-                    const currentText = personaStreamTexts[personaKey]
                     const currentMessageId = personaMessageIds[personaKey]
-                    
-                    setMessages(prev => prev.map(msg => 
-                      msg.id === currentMessageId 
-                        ? { ...msg, text: currentText, sender: parsed.persona_name || msg.sender, persona_name: parsed.persona_name, persona_id: parsed.persona_id }
-                        : msg
-                    ))
+                    enqueuePresentation({ kind: 'content', messageId: currentMessageId, content: parsed.content, personaName: parsed.persona_name, personaId: parsed.persona_id })
                   } else if (!isAllMessage) {
                     // Regular message: Stream text for personas and non-begin orchestrator messages
                     if (typingPersonaName !== "ChatOrchestrator" || !isBeginCommand) {
                       // Append streamed content
                       streamedText += parsed.content
-                      setMessages(prev => prev.map(msg => 
-                        msg.id === aiMessageId 
-                          ? { ...msg, text: streamedText, sender: (typingPersonaName === "ChatOrchestrator") ? "System" : (parsed.persona_name || msg.sender) }
-                          : msg
-                      ))
+                      enqueuePresentation({
+                        kind: 'content',
+                        messageId: aiMessageId,
+                        content: parsed.content,
+                        personaName: typingPersonaName === 'ChatOrchestrator' ? 'ChatOrchestrator' : parsed.persona_name,
+                        personaId: parsed.persona_id
+                      })
                     }
                   }
                 }
@@ -2020,23 +2237,36 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                   if (isAllMessage && parsed.persona_name) {
                     // @all message: Finalize this specific persona's message
                     const personaKey = parsed.persona_name
-                    const personaMessageId = personaMessageIds[personaKey]
-                    const finalText = parsed.full_content || personaStreamTexts[personaKey] || ""
+                    if (finalizedPersonaKeys.has(personaKey)) {
+                      chatData = parsed
+                      continue
+                    }
+                    finalizedPersonaKeys.add(personaKey)
+
+                    let personaMessageId = personaMessageIds[personaKey]
+                    if (!personaMessageId) {
+                      personaMessageId = nextMessageId()
+                      personaMessageIds[personaKey] = personaMessageId
+                      personaStreamTexts[personaKey] = ''
+                      enqueuePresentation({ kind: 'start', messageId: personaMessageId, personaName: personaKey, personaId: parsed.persona_id })
+                    }
+                    const finalText = combineTerminalContent(personaStreamTexts[personaKey] || '', parsed.content, parsed.full_content)
+                    personaStreamTexts[personaKey] = finalText
                     
                     if (personaMessageId) {
-                      setMessages(prev => prev.map(msg => 
-                        msg.id === personaMessageId 
-                          ? { 
-                              ...msg, 
-                              text: finalText,
-                              sender: parsed.persona_name || msg.sender,
-                              persona_name: parsed.persona_name,
-                              persona_id: parsed.persona_id,
-                              scene_completed: parsed.scene_completed,
-                              next_scene_id: parsed.next_scene_id
-                            }
-                          : msg
-                      ))
+                      enqueuePresentation({
+                        kind: 'done',
+                        messageId: personaMessageId,
+                        finalText,
+                        personaName: parsed.persona_name,
+                        metadata: {
+                          sender: parsed.persona_name,
+                          persona_name: parsed.persona_name,
+                          persona_id: parsed.persona_id,
+                          scene_completed: parsed.scene_completed,
+                          next_scene_id: parsed.next_scene_id
+                        }
+                      })
                     }
                     
                     // Update chatData with the last persona's data
@@ -2046,53 +2276,56 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                     if (parsed.scene_completed) {
                       setIsSceneTransitioning(true)
                     }
-                    
-                    // After all personas have finished streaming, clear streaming state
-                    // We'll do this after the loop completes
+
+                    // @all responses arrive sequentially. End this persona's visual
+                    // speaking/cursor state now; the next persona delta starts it again.
                   } else if (!isAllMessage) {
                     // Regular message: Final metadata received - streaming finished
                     chatData = parsed
-                    setIsStreaming(false) // Clear streaming state when streaming finishes
-                    setStreamingMessageId(null) // Clear streaming message ID
-                    
                     // Show loading screen if scene is completed
-                    if (parsed.scene_completed) {
-                      setIsSceneTransitioning(true)
-                    }
-                    
                     if (typingPersonaName === "ChatOrchestrator" && isBeginCommand) {
                       // For 'begin', remove the loading placeholder when finished
                       setMessages(prev => prev.filter(msg => msg.id !== aiMessageId))
                     } else {
-                      setMessages(prev => prev.map(msg => 
-                        msg.id === aiMessageId 
-                          ? { 
-                              ...msg, 
-                              text: parsed.full_content || streamedText,
-                              sender: (typingPersonaName === "ChatOrchestrator") ? "System" : (parsed.persona_name || "System"),
-                              persona_name: parsed.persona_name,
-                              persona_id: parsed.persona_id,
-                              scene_completed: parsed.scene_completed,
-                              next_scene_id: parsed.next_scene_id
-                            }
-                          : msg
-                      ))
+                      enqueuePresentation({
+                        kind: 'done',
+                        messageId: aiMessageId,
+                        finalText: combineTerminalContent(streamedText, parsed.content, parsed.full_content),
+                        personaName: typingPersonaName === 'ChatOrchestrator' ? 'ChatOrchestrator' : parsed.persona_name,
+                        metadata: {
+                          sender: typingPersonaName === 'ChatOrchestrator' ? 'System' : (parsed.persona_name || 'System'),
+                          persona_name: parsed.persona_name,
+                          persona_id: parsed.persona_id,
+                          scene_completed: parsed.scene_completed,
+                          next_scene_id: parsed.next_scene_id
+                        }
+                      })
                     }
                   }
                 }
               } catch (e) {
                 console.error("[DEBUG] Error parsing streaming response:", e, "Data:", data)
-                // Don't silently handle - log it for debugging
+                throw e
               }
             }
           }
         }
+      }
+
+      // The network reader is never delayed by the visual pacing. Wait only after
+      // the complete SSE response is buffered so metadata and scene transitions
+      // cannot overtake the student's visible dialogue.
+      await flushPresentation()
+
+      if (chatData.scene_completed) {
+        setIsSceneTransitioning(true)
       }
       
       // Final cleanup for @all messages
       if (isAllMessage) {
         setIsStreaming(false)
         setStreamingMessageId(null)
+        setActiveSpeakingPersona(null)
       }
       
       // Now process the final chatData metadata
@@ -2315,6 +2548,11 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
         }
 
     } catch (error) {
+      // A failed stream should not make the learner wait for a long queued reveal.
+      // Preserve what is already visible, discard undisplayed buffered text, and
+      // surface recovery UI immediately.
+      if (cancelPresentation) cancelPresentation()
+      if (!isMountedRef.current || requestController.signal.aborted) return
       setIsTyping(false)
       // REMOVED: Optimistic rollback - no longer needed since we removed optimistic updates
       setMessages(prev => [...prev, {
@@ -2325,8 +2563,14 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
         type: 'system'
       }])
     } finally {
-      setIsLoading(false)
-      setCurrentTypingPersona('')
+      if (streamAbortControllerRef.current === requestController) {
+        streamAbortControllerRef.current = null
+      }
+      if (isMountedRef.current) {
+        setIsLoading(false)
+        setCurrentTypingPersona('')
+        setActiveSpeakingPersona(null)
+      }
     }
   }
 
@@ -2345,8 +2589,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
         e.preventDefault();
         const selectedPersona = personas[mentionSelectedIndex];
         if (selectedPersona) {
-          const mentionId = selectedPersona.name.toLowerCase().replace(/\s+/g, '_');
-          setInput(input.replace(/@[^@]*$/, `@${mentionId} `));
+          addPersonaTarget(selectedPersona, input, true)
           setShowMentionDropdown(false);
           setMentionSelectedIndex(0);
         }
@@ -2792,276 +3035,252 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
     : allScenes.slice().sort((a, b) => a.scene_order - b.scene_order)
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="h-screen flex overflow-hidden max-md:h-auto max-md:min-h-screen max-md:overflow-y-auto">
       <RoleBasedSidebar currentPath={`/student/run-simulation/${instanceId}`} />
 
       {/* Offset for fixed sidebar */}
-      <div className="flex-1 ml-20 flex overflow-hidden min-w-0">
+      <div className="flex-1 ml-20 flex overflow-hidden min-w-0 max-md:flex-col max-md:overflow-visible">
 
-      {/* ── LEFT PANEL ─────────────────────────────────────────────────────────── */}
-      <div className="w-80 flex-shrink-0 bg-[#0f1117] text-white flex flex-col overflow-y-auto">
-        {/* Exit Simulation (visible when header tabs are not yet shown) */}
-        {!simulationHasBegun && !simulationComplete && (
-          <div className="px-4 pt-4 pb-2 flex-shrink-0">
-            <button
-              onClick={() => router.push("/student/simulations")}
-              className="flex items-center gap-1.5 text-white/40 hover:text-white/80 transition-colors text-sm"
+      {/* ── GUIDANCE PANEL ─────────────────────────────────────────────────── */}
+      <aside className="w-[22rem] flex-shrink-0 bg-card text-card-foreground flex flex-col overflow-hidden max-lg:w-72 max-md:h-auto max-md:min-h-[28rem] max-md:w-full max-md:overflow-visible">
+        <div className="px-4 pt-4 pb-3 flex-shrink-0">
+          <button
+            onClick={() => router.push("/student/simulations")}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-card-foreground transition-colors text-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Exit Simulation
+          </button>
+        </div>
+
+        <div className="px-4 pb-4 flex-shrink-0">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Simulation</p>
+          <h1 className="mt-1 font-heading text-lg font-semibold leading-tight text-card-foreground">
+            {simulationData.simulation.title}
+          </h1>
+        </div>
+
+        <Tabs
+          value={sidePanelTab}
+          onValueChange={(value) => setSidePanelTab(value as 'briefing' | 'notes')}
+          className="flex flex-1 min-h-0 flex-col"
+        >
+          <TabsList className="grid h-auto grid-cols-2 gap-1 mx-4 p-1 bg-muted/50 text-muted-foreground">
+            <TabsTrigger value="briefing" className="gap-1.5 text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-card-foreground">
+              <ListChecks className="w-4 h-4" /> Briefing
+            </TabsTrigger>
+            <TabsTrigger value="notes" className="gap-1.5 text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-card-foreground">
+              <NotebookPen className="w-4 h-4" /> Notes
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="briefing" className="relative m-0 flex-1 min-h-0 overflow-hidden p-4">
+            <div
+              ref={briefingScrollRef}
+              onScroll={(event) => setBriefingHasMore(event.currentTarget.scrollHeight - event.currentTarget.scrollTop > event.currentTarget.clientHeight + 4)}
+              className="guidance-scroll h-full overflow-y-scroll space-y-4 pr-3"
+              tabIndex={0}
+              aria-label="Mission briefing details"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Exit Simulation
+            <section className="rounded-xl border border-border bg-muted/50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-primary mb-2">Mission briefing</p>
+              <h1 className="font-heading text-lg font-semibold leading-tight">{simulationData.current_scene.title}</h1>
+              {simulationData.simulation.student_role && (
+                <p className="mt-2 text-sm text-muted-foreground"><span className="text-card-foreground font-medium">Your role:</span> {simulationData.simulation.student_role}</p>
+              )}
+              {simulationData.current_scene.description && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{simulationData.current_scene.description}</p>}
+            </section>
+
+            {simulationData.current_scene.user_goal && (
+              <section className="rounded-xl border border-primary/35 bg-primary/10 p-4">
+                <div className="flex items-center gap-2 mb-2 text-primary">
+                  <Target className="w-4 h-4" />
+                  <h2 className="text-xs font-semibold uppercase tracking-wide">Your objective</h2>
+                </div>
+                <p className="text-sm leading-relaxed text-card-foreground">{simulationData.current_scene.user_goal}</p>
+              </section>
+            )}
+
+            {simulationData.simulation.learning_objectives?.length > 0 && (
+              <section>
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">What this builds toward</h2>
+                <ul className="space-y-2">
+                  {simulationData.simulation.learning_objectives.map((objective, index) => (
+                    <li key={index} className="flex gap-2 text-sm text-muted-foreground">
+                      <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
+                      <span>{objective}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <button onClick={() => setShowTimeoutModal(true)} className="w-full rounded-xl border border-border bg-muted/50 p-3 text-left hover:bg-muted transition-colors">
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><Clock className="w-4 h-4" /> Turns used</span>
+                <span className="font-mono text-card-foreground">{turnCount}/{simulationData.current_scene.timeout_turns || 15}</span>
+              </div>
             </button>
-          </div>
-        )}
-        {/* Scene progress bar */}
-        <div className="px-4 pt-4 pb-4 flex-shrink-0">
-          <p className="text-[10px] text-white/30 uppercase tracking-widest mb-3 flex-shrink-0" style={{ fontFamily: "'Sora', sans-serif" }}>
-            Scenes
-          </p>
-          <div className="flex items-center gap-1 mb-2">
-            {(progressScenes.length > 0 ? progressScenes : Array.from({ length: totalScenes || 1 })).map((scene, i) => {
-              const sceneId = (scene as any)?.id
-              const isDone = sceneId ? completedScenes.includes(sceneId) : false
-              const isCurrent = sceneId
-                ? sceneId === simulationData.current_scene.id && !isDone
-                : i === currentScenePosition - 1
-              return (
-                <div
-                  key={sceneId || i}
-                  className={`h-1 flex-1 rounded-full transition-all duration-500 ${
-                    isDone ? 'bg-emerald-400' : isCurrent ? 'bg-white' : 'bg-white/20'
-                  }`}
-                />
-              )
-            })}
-          </div>
-          <p className="text-xs text-white/40 mb-3" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-            Scene {currentScenePosition} of {totalScenes} — {simulationData.current_scene.title}
-          </p>
-          {/* Simulation info card (scene description) */}
-          <div className="border border-white/10 rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.05)' }}>
-            <h1 className="text-sm font-semibold text-white/90 leading-tight" style={{ fontFamily: "'Sora', sans-serif" }}>
-              {simulationData.current_scene.title}
-            </h1>
-            {simulationData.current_scene.description && (
-              <p className="text-xs text-white/40 mt-1.5 leading-relaxed">
-                {simulationData.current_scene.description}
-              </p>
+            </div>
+            {briefingHasMore && (
+              <div className="pointer-events-none absolute bottom-5 right-5 rounded-full border border-border bg-card/95 px-2 py-1 text-[0.6875rem] font-medium text-muted-foreground shadow-md backdrop-blur-sm" role="status">
+                <span className="sr-only">More mission briefing content is available below.</span>
+                <span className="flex items-center gap-1" aria-hidden="true">More <ChevronDown className="h-3 w-3 text-primary" /></span>
+              </div>
             )}
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="h-px mx-4 mb-4 flex-shrink-0" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-        {/* Available Personas */}
-        <div className="px-4 flex-1 min-h-0 flex flex-col pb-4">
-          <p className="text-[10px] text-white/30 uppercase tracking-widest mb-3 flex-shrink-0" style={{ fontFamily: "'Sora', sans-serif" }}>
-            Available Personas
-          </p>
-          <div className="space-y-2 overflow-y-auto flex-1">
-            {simulationData.current_scene.personas && simulationData.current_scene.personas.length > 0 ? (
-              simulationData.current_scene.personas.map((persona) => {
-                const mentionId = persona.name.toLowerCase().replace(/\s+/g, '_')
-                const isSelected = selectedPersonas.includes(mentionId)
-                const personaImg = getPersonaImage(persona.name)
-                const canSelect = simulationHasBegun && !isLoading && !isTyping && !simulationComplete
-                return (
-                  <div
-                    key={persona.id}
-                    role="button"
-                    tabIndex={canSelect ? 0 : -1}
-                    aria-pressed={isSelected}
-                    onClick={() => canSelect && togglePersonaSelection(persona)}
-                    onKeyDown={(e) => {
-                      if (!canSelect) return
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        togglePersonaSelection(persona)
-                      }
-                    }}
-                    className={`rounded-xl p-3 border transition-all duration-200 ${
-                      !canSelect
-                        ? 'opacity-50 cursor-not-allowed border-white/10'
-                        : isSelected
-                        ? 'persona-card-selected cursor-pointer border-blue-400/50'
-                        : 'cursor-pointer border-white/10 hover:border-white/25'
-                    }`}
-                    style={{
-                      background: isSelected
-                        ? 'rgba(59,130,246,0.15)'
-                        : 'rgba(255,255,255,0.04)'
-                    }}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-gray-700 flex items-center justify-center">
-                        {personaImg ? (
-                          <img src={personaImg} alt={persona.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                        ) : (
-                          <User className="w-6 h-6 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{persona.name}</p>
-                        <p className="text-white/50 text-xs truncate">{persona.role}</p>
-                        <p className="text-white/35 text-xs mt-0.5 line-clamp-2 leading-relaxed">{persona.background}</p>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedPersona({ id: persona.id, name: persona.name, role: persona.role, bio: persona.background, personality: persona.correlation, background: persona.background, image_url: persona.image_url })
-                          setShowPersonaModal(true)
-                        }}
-                        className="text-white/25 hover:text-white/60 transition-colors flex-shrink-0 mt-0.5"
-                      >
-                        <HelpCircle className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })
-            ) : (
-              <p className="text-white/25 text-xs text-center py-6">No personas in this scene</p>
-            )}
-          </div>
-        </div>
-      </div>
+          </TabsContent>
+          <TabsContent value="notes" className="m-0 flex-1 min-h-[20rem] p-4 flex flex-col max-md:min-h-[24rem]">
+            <div className="mb-3">
+              <h2 className="font-heading font-semibold">Field notes</h2>
+              <p className="text-xs text-muted-foreground mt-1">Private notes are saved on this device for this simulation.</p>
+            </div>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Capture evidence, questions, and decisions…"
+              aria-label="Simulation notes"
+              className="flex-1 min-h-48 resize-none rounded-xl border border-border bg-muted/50 p-3 text-sm leading-relaxed text-card-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">Saved automatically</p>
+          </TabsContent>
+        </Tabs>
+      </aside>
 
       {/* ── RIGHT PANEL ─────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 relative flex flex-col overflow-hidden"
+        className="flex-1 relative flex flex-col overflow-hidden bg-background max-md:min-h-[100svh] max-md:overflow-visible"
         style={{
           backgroundImage: simulationData.current_scene.image_url
             ? `url(${getImageUrl(simulationData.current_scene.image_url)})`
             : undefined,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundColor: '#1a1a2e'
+          backgroundPosition: 'center'
         }}
       >
         {/* Overlay */}
-        <div className="absolute inset-0 bg-black/55" />
+        <div className="absolute inset-0 bg-background/60" />
 
         {/* Content */}
-        <div className="relative z-10 flex flex-col h-full">
+        <div className="relative z-10 flex flex-col h-full max-md:min-h-[100svh]">
 
-          {/* ── SOLID HEADER BAR — tabs + Exit Simulation ── */}
+          {/* Runtime header: conversation is the default experience; assessment appears only after completion. */}
           {(simulationHasBegun || simulationComplete) && (
-            <div className="flex-shrink-0 flex items-center justify-between gap-1 px-4 py-3 border-b border-white/10" style={{ background: '#0f1117' }}>
-              <div className="flex items-center gap-1">
-              {([
-                'conversation',
-                'case-study',
-                'grading',
-                ...(simulationData.current_scene.scene_type === 'code_challenge' ? ['code-editor', 'resources'] : [])
-              ] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab as typeof activeTab)}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab
-                      ? 'bg-white/15 text-white'
-                      : 'text-white/50 hover:text-white/80 hover:bg-white/8'
-                  }`}
-                  style={{ fontFamily: "'Sora', sans-serif" }}
-                >
-                  {tab === 'conversation' ? 'Conversation'
-                    : tab === 'case-study' ? 'Case Study'
-                    : tab === 'grading' ? 'Grading'
-                    : tab === 'code-editor' ? 'Code Editor'
-                    : 'Resources'}
-                </button>
-              ))}
+            <header className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 border-b border-border bg-card/95 px-4 py-3 text-card-foreground backdrop-blur-md">
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+                {simulationData.current_scene.scene_type === 'code_challenge' && (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setActiveTab(activeTab === 'code-editor' ? 'conversation' : 'code-editor')} className="text-muted-foreground hover:text-foreground hover:bg-muted">
+                      {activeTab === 'code-editor' ? 'Return to scene' : 'Code editor'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setActiveTab('resources')} className="text-muted-foreground hover:text-foreground hover:bg-muted">Resources</Button>
+                  </>
+                )}
+                <section className="ml-auto w-[min(24rem,48vw)] min-w-44 max-sm:w-full" aria-labelledby="current-scene-title" aria-describedby="scene-progress-label">
+                  <h2 id="current-scene-title" className="mb-1 truncate text-right font-heading text-sm font-semibold text-card-foreground" title={simulationData.current_scene.title}>
+                    {simulationData.current_scene.title}
+                  </h2>
+                  <div id="scene-progress-label" className="mb-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>Scene progress</span>
+                    <span>{currentScenePosition}/{totalScenes}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(progressScenes.length > 0 ? progressScenes : Array.from({ length: totalScenes || 1 })).map((scene, i) => {
+                      const sceneId = (scene as any)?.id
+                      const isDone = sceneId ? completedScenes.includes(sceneId) : false
+                      const isCurrent = sceneId ? sceneId === simulationData.current_scene.id && !isDone : i === currentScenePosition - 1
+                      return <div key={sceneId || i} className={`h-1.5 flex-1 rounded-full transition-colors duration-normal ${isDone ? 'bg-success' : isCurrent ? 'bg-primary' : 'bg-muted'}`} />
+                    })}
+                  </div>
+                </section>
               </div>
-              <button
-                onClick={() => router.push("/student/simulations")}
-                className="flex items-center gap-1.5 text-white/50 hover:text-white/90 transition-colors text-sm ml-auto"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Exit Simulation
-              </button>
-            </div>
-          )}
-
-          {/* ── OBJECTIVE BAR — solid blue, centered ── */}
-          {simulationHasBegun && simulationData.current_scene.user_goal && activeTab === 'conversation' && (
-            <div
-              className="flex-shrink-0 px-6 py-3 flex items-center justify-center gap-2.5 cursor-pointer hover:brightness-110 transition-all"
-              style={{ background: '#1e3a5f' }}
-              onClick={() => setShowObjectiveModal(true)}
-            >
-              <Target className="w-4 h-4 text-blue-300 flex-shrink-0" />
-              <p className="text-blue-100 text-sm font-medium text-center leading-snug">
-                {simulationData.current_scene.user_goal}
-              </p>
-            </div>
+            </header>
           )}
 
           {/* ── CONVERSATION TAB ── */}
           {activeTab === 'conversation' && (
-            <div className="flex flex-col flex-1 min-h-0 px-6 pb-6">
+            <div className="flex flex-col flex-1 min-h-0 px-6 pb-6 max-md:min-h-[calc(100svh-4rem)] max-sm:px-3 max-sm:pb-3">
 
-              {/* Center — dynamic persona avatars for current turn */}
-              <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-2">
-                {(() => {
-                  // Collect unique personas who responded in this turn
-                  const turnMsgs = messages.slice(currentTurnStartIndex)
-                  const respondingPersonas = Array.from(
-                    new Map(
-                      turnMsgs
-                        .filter(m => m.type === 'ai_persona' && (m.persona_name || m.sender))
-                        .map(m => {
-                          const name = m.persona_name || m.sender
-                          return [name, name]
-                        })
-                    ).values()
-                  )
-                  // Also include currently typing persona if not already listed
-                  if (isTyping && typingPersona && typingPersona !== 'ChatOrchestrator' && !respondingPersonas.includes(typingPersona)) {
-                    respondingPersonas.push(typingPersona)
-                  }
-
-                  if (respondingPersonas.length > 0) {
-                    // Dynamic sizing: fewer personas = larger avatars
-                    const count = respondingPersonas.length
-                    const avatarSize = count <= 2 ? 'w-36 h-36' : count <= 4 ? 'w-28 h-28' : 'w-20 h-20'
-                    const iconSize = count <= 2 ? 'w-16 h-16' : count <= 4 ? 'w-12 h-12' : 'w-8 h-8'
-                    const textSize = count <= 2 ? 'text-sm' : 'text-xs'
-                    const borderWidth = count <= 2 ? 'border-4' : 'border-2'
-
-                    return (
-                      <div className="flex flex-col items-center gap-3">
-                        <div className={`flex items-center justify-center flex-wrap gap-4 ${count > 3 ? 'max-w-md' : ''}`}>
-                          {respondingPersonas.map((name) => {
-                            const img = getPersonaImage(name)
-                            const isSpeaking = name === lastSpeakingPersona || (isTyping && name === typingPersona)
-                            return (
-                              <div key={name} className="flex flex-col items-center gap-2">
-                                <div className={`${avatarSize} rounded-full overflow-hidden bg-gray-700 ${borderWidth} shadow-2xl flex items-center justify-center transition-all duration-300 ${isSpeaking ? 'border-blue-400 scale-105' : 'border-white/20'}`}>
-                                  {img
-                                    ? <img src={img} alt={name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                                    : <User className={`${iconSize} text-gray-400`} />}
-                                </div>
-                                <p className={`text-white/80 ${textSize} font-medium text-center`} style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                                  {name}
-                                </p>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  } else if (simulationHasBegun) {
-                    return (
-                      <div className="text-center">
-                        <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '2px solid rgba(255,255,255,0.1)' }}>
-                          <Users className="w-10 h-10 text-white/20" />
-                        </div>
-                        <p className="text-sm text-white/30">@mention a persona to respond</p>
-                      </div>
-                    )
-                  }
-                  return null
-                })()}
+              {/* Visual-novel stage: controls stay anchored while portraits fill the scene. */}
+              <div className="flex-1 min-h-[14rem] relative flex items-end justify-center overflow-hidden pt-14">
+                {simulationHasBegun && simulationData.current_scene.personas?.length > 0 ? (
+                  <>
+                    <div className="absolute inset-x-0 top-2 z-30 flex items-center justify-center gap-3" aria-label="Persona selection controls">
+                      <Button
+                        type="button"
+                        variant={selectedPersonas.length === simulationData.current_scene.personas.length ? 'default' : 'secondary'}
+                        size="sm"
+                        aria-pressed={selectedPersonas.length === simulationData.current_scene.personas.length}
+                        onClick={toggleAllPersonas}
+                        disabled={isLoading || isTyping || simulationComplete}
+                        className="h-8 text-xs shadow-md"
+                      >
+                        {selectedPersonas.length === simulationData.current_scene.personas.length ? 'Deselect all' : 'Select all'}
+                      </Button>
+                      <span className="rounded-full bg-card/85 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-md">
+                        Addressing {selectedPersonas.length || 'no one yet'}
+                      </span>
+                    </div>
+                    <div className="w-full h-full flex items-end justify-center gap-1 sm:gap-3 px-2" role="group" aria-label="Choose who to address">
+                      {simulationData.current_scene.personas.map((persona) => {
+                        const isSelected = selectedPersonas.includes(persona.id)
+                        const isSpeaking = persona.name === activeSpeakingPersona
+                        const personaImg = getPersonaImage(persona.name)
+                        const personaCount = simulationData.current_scene.personas.length
+                        return (
+                          <div
+                            key={persona.id}
+                            className="relative h-full min-w-0 flex-1 max-w-[22rem]"
+                            style={{ maxWidth: personaCount > 4 ? '13rem' : undefined }}
+                          >
+                            <div className="absolute inset-x-0 top-10 z-30 flex items-center justify-center gap-1">
+                              <span className="min-w-0 truncate rounded-l-full border border-border bg-card/90 py-1.5 pl-3 pr-1 text-xs font-medium text-card-foreground shadow-md backdrop-blur-md">
+                                {persona.name}
+                              </span>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label={`About ${persona.name}`}
+                                    className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/90 text-muted-foreground shadow-md backdrop-blur-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    <HelpCircle className="h-4 w-4" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="center" side="bottom" className="w-80 max-w-[calc(100vw-2rem)]">
+                                  <p className="font-heading font-semibold text-popover-foreground">{persona.name}</p>
+                                  <p className="mt-1 text-sm font-medium text-muted-foreground">{persona.role}</p>
+                                  <p className="mt-3 text-sm leading-relaxed text-popover-foreground">{persona.background || 'No background information is available.'}</p>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            <button
+                              type="button"
+                              aria-pressed={isSelected}
+                              aria-label={`${isSelected ? 'Remove' : 'Address'} ${persona.name}, ${persona.role}`}
+                              onClick={() => togglePersonaSelection(persona)}
+                              disabled={isLoading || isTyping || simulationComplete}
+                              className={`group/persona relative h-full w-full min-w-0 flex flex-col items-center justify-end rounded-t-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset transition-[filter,transform,opacity] duration-normal ${isSelected ? 'brightness-110' : 'opacity-75 hover:opacity-100'} ${isSpeaking ? 'sim-persona-speaking opacity-100' : ''}`}
+                            >
+                              <div className={`absolute inset-x-2 bottom-8 h-2/3 rounded-full blur-3xl transition-opacity duration-normal ${isSpeaking ? 'bg-primary/25 opacity-100' : isSelected ? 'bg-primary/15 opacity-100' : 'opacity-0'}`} aria-hidden="true" />
+                              {personaImg ? (
+                                <img
+                                  src={personaImg}
+                                  alt=""
+                                  className="relative z-10 h-[clamp(13rem,46vh,34rem)] w-full object-contain object-bottom drop-shadow-2xl"
+                                  onError={(event) => { event.currentTarget.style.display = 'none' }}
+                                />
+                              ) : (
+                                <div className="relative z-10 mb-8 flex h-40 w-32 items-center justify-center rounded-t-full bg-surface-muted/70"><User className="w-12 h-12 text-muted-foreground" /></div>
+                              )}
+                              {isSpeaking && <span className="sr-only">Currently responding</span>}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : simulationHasBegun ? (
+                  <div className="mb-8 text-center text-muted-foreground"><Users className="w-10 h-10 mx-auto mb-2" /><p className="text-sm">No personas are present in this scene.</p></div>
+                ) : null}
               </div>
 
               {/* Confined response box — current turn messages only (expandable) */}
@@ -3070,15 +3289,22 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                 const displayMsgs = showAllMessages ? messages : turnMsgs
                 const hasContent = turnMsgs.length > 0 || gradingInProgress
                 const hasPreviousMessages = currentTurnStartIndex > 0
-                if (!hasContent && !showAllMessages) return null
                 return (
-                  <div ref={messageBoxRef} className={`group mb-3 flex-shrink-0 rounded-2xl overflow-y-auto space-y-3 ${showAllMessages ? 'pt-0 px-4 pb-4' : 'p-4'}`} style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', scrollbarWidth: 'thin', maxHeight: '50vh' }}>
+                  <div
+                    ref={messageBoxRef}
+                    aria-hidden={!hasContent && !showAllMessages}
+                    className={`group rounded-2xl border border-border bg-card/90 text-card-foreground shadow-xl backdrop-blur-md overflow-y-auto space-y-3 transition-opacity ${
+                      showAllMessages
+                        ? 'absolute inset-x-6 top-4 bottom-[10rem] z-40 pt-0 px-4 pb-4 max-sm:inset-x-3'
+                        : `relative z-20 mb-3 h-40 min-h-40 max-h-40 flex-shrink-0 p-4 ${hasContent ? 'opacity-100' : 'pointer-events-none opacity-0'}`
+                    }`}
+                    style={{ scrollbarWidth: 'thin' }}
+                  >
                     {/* See all / Hide all toggle — visible on hover (collapsed) or always (expanded) */}
                     {hasPreviousMessages && (
                       <button
                         onClick={() => setShowAllMessages(prev => !prev)}
-                        className={`w-full flex items-center justify-center gap-1.5 hover:text-white/55 transition-all text-xs ${showAllMessages ? 'sticky top-0 z-10 text-white/40 opacity-100 py-2' : 'text-white/35 opacity-0 group-hover:opacity-100 py-0.5'}`}
-                        style={{ fontFamily: "'Sora', sans-serif", ...(showAllMessages ? { background: 'linear-gradient(to bottom, rgba(0,0,0,0.6) 60%, transparent)', backdropFilter: 'blur(12px)' } : {}) }}
+                        className={`w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-all ${showAllMessages ? 'sticky top-0 z-10 bg-card/95 opacity-100 py-2 backdrop-blur-md' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 py-0.5'}`}
                       >
                         {showAllMessages ? (
                           <>
@@ -3095,11 +3321,11 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                     )}
                     {/* Separator when showing all */}
                     {showAllMessages && hasPreviousMessages && (
-                      <div className="border-t border-white/10" />
+                      <div className="border-t border-border" />
                     )}
                     {gradingInProgress && (
-                      <div className="flex items-center gap-3 text-white/60">
-                        <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" />
+                      <div className="flex items-center gap-3 text-muted-foreground" role="status" aria-live="polite">
+                        <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0 motion-reduce:animate-none" aria-hidden="true" />
                         <span className="text-sm">Grading in progress…</span>
                       </div>
                     )}
@@ -3111,32 +3337,31 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                       return (
                         <div key={msg.id} className={`flex gap-2 ${isUserMsg ? 'justify-end' : ''}`}>
                           {msg.type === 'ai_persona' && (
-                            <div className="w-7 h-7 rounded-full bg-gray-600 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                            <div className="w-7 h-7 rounded-full bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
                               {personaImg
                                 ? <img src={personaImg} alt={personaName || ''} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                                : <User className="w-3.5 h-3.5 text-gray-400" />}
+                                : <User className="w-3.5 h-3.5 text-muted-foreground" />}
                             </div>
                           )}
-                          <div className={`min-w-0 ${isUserMsg ? 'max-w-[80%] bg-white/15 rounded-xl px-3 py-2' : 'flex-1'}`}>
+                          <div className={`min-w-0 ${isUserMsg ? 'max-w-[80%] bg-muted rounded-xl px-3 py-2' : 'flex-1'}`}>
                             {isUserMsg && (
-                              <p className="text-blue-300/70 text-xs mb-0.5 font-medium" style={{ fontFamily: "'Sora', sans-serif" }}>You</p>
+                              <p className="text-primary text-xs mb-0.5 font-medium">You</p>
                             )}
                             {msg.type === 'ai_persona' && (
-                              <p className="text-white/55 text-xs mb-0.5 font-medium" style={{ fontFamily: "'Sora', sans-serif" }}>
+                              <p className="text-muted-foreground text-xs mb-0.5 font-medium">
                                 {personaName}
                               </p>
                             )}
-                            {isStreamingMsg ? (
-                              <div className="h-1.5 rounded-full w-full animate-pulse" style={{ background: 'linear-gradient(90deg, #60a5fa, #3b82f6, #60a5fa)', backgroundSize: '200% 100%' }} />
-                            ) : (
-                              <div className="text-white/85 text-sm leading-relaxed">
-                                {(msg.text || '').split('\n').map((line, i) => {
-                                  const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                                  const formatted = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                  return <div key={i} dangerouslySetInnerHTML={{ __html: formatted }} />
-                                })}
-                              </div>
-                            )}
+                            <div className="text-card-foreground text-sm leading-relaxed">
+                              {(msg.text || '').split('\n').map((line, i) => {
+                                const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                                const formatted = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                return <div key={i} dangerouslySetInnerHTML={{ __html: formatted }} />
+                              })}
+                              {isStreamingMsg && (
+                                <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-primary align-text-bottom motion-reduce:animate-none" aria-label="Response is still being generated" />
+                              )}
+                            </div>
                             {msg.showViewGrading && (
                               <button
                                 onClick={async () => {
@@ -3188,28 +3413,28 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
               {/* Input bar */}
               <div className="flex-shrink-0">
                 {simulationComplete ? (
-                  <div className="rounded-2xl p-4 flex items-center gap-3 border" style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255,255,255,0.12)' }}>
-                    <Eye className="w-5 h-5 text-white/30 flex-shrink-0" />
-                    <p className="text-white/35 text-sm">Review mode — interactions disabled</p>
+                  <div className="rounded-2xl border border-border bg-card/90 p-4 flex items-center gap-3 text-card-foreground backdrop-blur-md">
+                    <Eye className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                    <p className="text-muted-foreground text-sm">Review mode — interactions disabled</p>
                   </div>
                 ) : !simulationHasBegun ? (
                   <button
                     onClick={() => sendMessage("begin")}
                     disabled={isLoading || isTyping}
-                    className="w-full bg-white text-gray-900 font-semibold py-4 rounded-2xl hover:bg-white/90 transition-all flex items-center justify-center gap-2 text-sm shadow-lg disabled:opacity-60"
+                    className="w-full bg-primary text-primary-foreground font-semibold py-4 rounded-2xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 text-sm shadow-lg disabled:opacity-60"
                   >
                     {isLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <><PlayCircle className="w-5 h-5" />Begin Simulation</>}
                   </button>
                 ) : (
-                  <div className="rounded-2xl shadow-lg overflow-hidden" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)' }}>
+                  <div className="rounded-2xl border border-border bg-card/95 text-card-foreground shadow-lg overflow-hidden backdrop-blur-md">
                     {/* Textarea section — expands upward */}
                     <div className="relative px-4 pt-3 pb-2">
                       {/* @mention dropdown */}
                       {showMentionDropdown && (
-                        <div className="sim-mention-dropdown absolute bottom-full left-0 right-0 z-20 mb-2 max-h-56 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                        <div className="sim-mention-dropdown absolute bottom-full left-0 right-0 z-20 mb-2 max-h-56 overflow-y-auto border border-border bg-popover text-popover-foreground shadow-xl">
                           <div className="sim-mention-header">
-                            <div className="text-xs font-semibold text-gray-700 mb-1">Personas</div>
-                            <div className="text-xs text-gray-500">Select to @mention</div>
+                            <div className="text-xs font-semibold text-popover-foreground mb-1">Personas</div>
+                            <div className="text-xs text-muted-foreground">Select to @mention</div>
                           </div>
                           <div className="p-2">
                             {simulationData.current_scene.personas.map((persona, index) => (
@@ -3217,21 +3442,20 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                                 key={persona.id}
                                 className={`sim-mention-item flex items-center gap-2 p-2 rounded cursor-pointer ${index === mentionSelectedIndex ? 'sim-mention-item-selected' : ''}`}
                                 onClick={() => {
-                                  const mentionId = persona.name.toLowerCase().replace(/\s+/g, '_')
-                                  setInput(input.replace(/@[^@]*$/, `@${mentionId} `))
+                                  addPersonaTarget(persona, input, true)
                                   setShowMentionDropdown(false)
                                   setMentionSelectedIndex(0)
                                 }}
                                 onMouseEnter={() => setMentionSelectedIndex(index)}
                               >
-                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0 overflow-hidden">
                                   {persona.image_url && persona.image_url.trim()
                                     ? <img src={getImageUrl(persona.image_url)} alt={persona.name} className="object-cover w-full h-full" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                                    : <User className="w-3.5 h-3.5 text-white" />}
+                                    : <User className="w-3.5 h-3.5 text-primary-foreground" />}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-semibold truncate text-gray-900">{persona.name}</div>
-                                  <div className="text-xs text-gray-500 truncate">{persona.role}</div>
+                                  <div className="text-sm font-semibold truncate text-popover-foreground">{persona.name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">{persona.role}</div>
                                 </div>
                               </div>
                             ))}
@@ -3242,6 +3466,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                         value={input}
                         onChange={(e) => {
                           setInput(e.target.value)
+                          setSelectedPersonas(selectedIdsFromInput(e.target.value))
                           // Auto-resize
                           e.target.style.height = 'auto'
                           e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
@@ -3253,7 +3478,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                         placeholder="Ask anything…"
                         disabled={inputBlocked || isLoading || isTyping || gradingInProgress}
                         rows={1}
-                        className="w-full border-0 bg-transparent text-gray-900 placeholder-gray-400 focus:ring-0 focus:outline-none text-sm p-0 resize-none overflow-y-auto"
+                        className="w-full border-0 bg-transparent text-card-foreground placeholder:text-muted-foreground focus:ring-0 focus:outline-none text-sm p-0 resize-none overflow-y-auto"
                         style={{ minHeight: '24px', maxHeight: '160px' }}
                       />
                     </div>
@@ -3261,26 +3486,23 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                     <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
                       <button
                         onClick={() => {
-                          const base = input.trimEnd()
-                          setInput(base ? `${base} @all ` : `@all `)
+                          toggleAllPersonas()
                         }}
                         disabled={inputBlocked || isLoading || isTyping}
-                        className="flex items-center gap-1 h-6 px-2 rounded-md bg-gray-100 border border-gray-200 text-xs text-gray-600 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+                        className="flex items-center gap-1 h-6 px-2 rounded-md bg-muted border border-border text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
                       >
                         <Users className="w-3 h-3" />
                         @all
                       </button>
                       {simulationData.current_scene.personas.map((persona) => {
-                        const mentionId = persona.name.toLowerCase().replace(/\s+/g, '_')
                         return (
                           <button
                             key={persona.id}
                             onClick={() => {
-                              const base = input.trimEnd()
-                              setInput(base ? `${base} @${mentionId} ` : `@${mentionId} `)
+                              addPersonaTarget(persona, input, true)
                             }}
                             disabled={inputBlocked || isLoading || isTyping}
-                            className="flex items-center gap-1 h-6 px-2 rounded-md bg-gray-100 border border-gray-200 text-xs text-gray-600 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+                            className="flex items-center gap-1 h-6 px-2 rounded-md bg-muted border border-border text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
                           >
                             <User className="w-3 h-3" />
                             @{persona.name.split(' ')[0]}
@@ -3289,7 +3511,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                       })}
                     </div>
                     {/* Dividing line */}
-                    <div className="border-t border-gray-200 mx-3" />
+                    <div className="border-t border-border mx-3" />
                     {/* Bottom row — Submit left, turns + send right */}
                     <div className="flex items-center justify-between px-3 py-2">
                       <div className="flex items-center gap-1.5">
@@ -3297,7 +3519,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                           <button
                             onClick={handleSubmitForGrading}
                             disabled={inputBlocked || hasSubmittedForGrading || isLoading || isTyping}
-                            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-success text-success-foreground text-xs font-semibold hover:bg-success/90 disabled:opacity-50 transition-colors"
                           >
                             {hasSubmittedForGrading
                               ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Submitting…</>
@@ -3308,7 +3530,7 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                           href="https://www.youtube.com/channel/UC-XuuFHdLVzpO0nr6Jqe3aQ"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center justify-center w-6 h-6 rounded-full border border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors flex-shrink-0"
+                          className="flex items-center justify-center w-6 h-6 rounded-full border border-border text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                           title="Help & Tutorials"
                         >
                           <HelpCircle className="w-3.5 h-3.5" />
@@ -3318,47 +3540,20 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
                         {/* Turns */}
                         <button
                           onClick={() => setShowTimeoutModal(true)}
-                          className="flex items-center gap-1 h-8 px-2.5 rounded-lg bg-gray-100 border border-gray-200 text-xs font-mono text-gray-600 hover:bg-gray-200 transition-colors"
+                          className="flex items-center gap-1 h-8 px-2.5 rounded-lg bg-muted border border-border text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
                         >
-                          <Clock className="w-3 h-3 text-gray-400" />
+                          <Clock className="w-3 h-3 text-muted-foreground" />
                           {turnCount}/{simulationData.current_scene.timeout_turns || 15}
                         </button>
                         {/* Send */}
                         <button
                           onClick={() => sendMessage()}
                           disabled={inputBlocked || isLoading || isTyping || !input.trim() || gradingInProgress}
-                          className="flex items-center justify-center h-8 w-8 rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-30 transition-colors"
+                          className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors"
                         >
                           {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── CASE STUDY TAB ── */}
-          {activeTab === 'case-study' && (
-            <div className="flex-1 p-4 flex flex-col min-h-0">
-              <div className="relative z-10 bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col flex-1">
-                {simulationData?.simulation?.case_study_url ? (
-                  <>
-                    <div className="p-4 border-b flex items-center justify-between flex-shrink-0">
-                      <h3 className="font-semibold text-gray-900 text-sm">Case Study Document</h3>
-                      <Button variant="outline" size="sm" onClick={() => window.open(simulationData.simulation?.case_study_url, '_blank')}>
-                        <ArrowRight className="w-4 h-4 mr-2" />Open in New Tab
-                      </Button>
-                    </div>
-                    <iframe src={simulationData.simulation.case_study_url} className="flex-1 border-0 w-full" title="Case Study PDF" />
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center text-center p-6">
-                    <div>
-                      <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 font-medium">Case Study</p>
-                      <p className="text-gray-400 text-sm mt-1">No case study PDF available for this simulation</p>
                     </div>
                   </div>
                 )}
@@ -3430,9 +3625,8 @@ ${availablePersonas.map(persona => `• @${persona.name.toLowerCase().replace(/\
         isOpen={showPersonaModal}
         onClose={() => setShowPersonaModal(false)}
         onMessage={(personaName) => {
-          const mentionId = personaName.toLowerCase().replace(/\s+/g, '_')
-          const base = input.trimEnd()
-          setInput(base ? `${base} @${mentionId} ` : `@${mentionId} `)
+          const persona = simulationData.current_scene.personas.find(candidate => candidate.name === personaName)
+          if (persona) addPersonaTarget(persona, input)
         }}
       />
 

@@ -23,7 +23,7 @@ interface Persona {
   /** Relationship of this persona to the student role (backend: correlation) */
   correlation?: string;
   /** 3–5 concise goals this persona is pursuing */
-  primaryGoals?: string;
+  primaryGoals?: string | string[];
   /** Big Five personality traits, each scored 1–10 */
   traits: Record<string, number>;
   defaultTraits?: Record<string, number>;
@@ -99,7 +99,7 @@ export default function PersonaCard({
     description: persona.description,
     currentContext: persona.currentContext,
     correlation: persona.correlation,
-    primaryGoals: persona.primaryGoals,
+    primaryGoals: Array.isArray(persona.primaryGoals) ? persona.primaryGoals.join("\n") : persona.primaryGoals,
     traits: fullTraits,
     knowledgeAreas: (persona.knowledgeAreas || []).join("\n"),
     communicationStyle: persona.communicationStyle,
@@ -222,17 +222,17 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
   if (!editMode) {
     return (
       <Card
-        className="flex flex-row items-stretch w-full max-w-4xl min-h-[140px] p-4 mb-3 card-elevated bg-white/90 backdrop-blur-sm border border-gray-200/60 rounded-xl shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 animate-fade-scale"
+        className="flex flex-row items-stretch w-full max-w-4xl min-h-[140px] p-4 mb-3 bg-card border border-border rounded-xl shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 "
         tabIndex={0}
         aria-label={`Edit persona: ${persona.name}`}
       >
         {/* Avatar */}
         <div className="flex flex-col items-center justify-center w-32 mr-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden flex items-center justify-center mb-1 shadow-sm border border-gray-200/60">
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-surface-muted to-surface-subtle overflow-hidden flex items-center justify-center mb-1 shadow-sm border border-border">
             {persona.imageUrl ? (
               <img src={persona.imageUrl} alt={persona.name} className="object-cover w-full h-full" />
             ) : (
-              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <circle cx="12" cy="8" r="4" />
                 <path d="M6 20c0-2.2 3-4 6-4s6 1.8 6 4" />
               </svg>
@@ -243,29 +243,29 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
         {/* Name, position, background, context, goals */}
         <div className="flex-1 flex flex-col justify-center pr-6">
           <div className="text-xl font-bold leading-tight mb-0.5">{persona.name}</div>
-          <div className="text-base text-gray-500 mb-0.5">
-            {persona.position || <span className="italic text-gray-400">Click to add role/title</span>}
+          <div className="text-base text-muted-foreground mb-0.5">
+            {persona.position || <span className="italic text-muted-foreground">Click to add role/title</span>}
           </div>
           {persona.correlation && (
-            <div className="text-xs text-indigo-600 mb-1 italic">{persona.correlation}</div>
+            <div className="text-xs text-primary mb-1 italic">{persona.correlation}</div>
           )}
-          <div className="text-sm text-gray-800 mb-1">
-            {persona.description || <span className="italic text-gray-400">Click to add background</span>}
+          <div className="text-sm text-foreground mb-1">
+            {persona.description || <span className="italic text-muted-foreground">Click to add background</span>}
           </div>
           {persona.currentContext && (
-            <div className="text-sm text-gray-600 mb-1">
-              <span className="font-semibold text-gray-700">Context: </span>
+            <div className="text-sm text-muted-foreground mb-1">
+              <span className="font-semibold text-foreground">Context: </span>
               {persona.currentContext}
             </div>
           )}
           {persona.primaryGoals && (
-            <div className="text-xs text-slate-800 mt-1">
+            <div className="text-xs text-foreground mt-1">
               <span className="font-semibold">Goals: </span>
-              {persona.primaryGoals}
+              {Array.isArray(persona.primaryGoals) ? persona.primaryGoals.join(" · ") : persona.primaryGoals}
             </div>
           )}
           {persona.communicationStyle && (
-            <div className="text-xs text-gray-500 mt-0.5 italic">
+            <div className="text-xs text-muted-foreground mt-0.5 italic">
               <span className="font-semibold not-italic">Style: </span>
               {persona.communicationStyle}
             </div>
@@ -278,7 +278,7 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
             const value = traits[key] ?? 5;
             return (
               <div key={key} className="flex items-center mb-1.5">
-                <span className="w-36 text-right pr-2 text-sm font-medium text-gray-800">{label}</span>
+                <span className="w-36 text-right pr-2 text-sm font-medium text-foreground">{label}</span>
                 <div className="flex-1 flex items-center">
                   <Slider
                     min={1}
@@ -288,7 +288,7 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
                     disabled
                     className="w-28 mx-1"
                   />
-                  <span className="w-5 text-xs text-gray-500 text-center">{value}</span>
+                  <span className="w-5 text-xs text-muted-foreground text-center">{value}</span>
                 </div>
               </div>
             );
@@ -301,16 +301,16 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
   // ── Edit mode ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-none mx-auto bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200/60 shadow-lg animate-fade-scale flex flex-col h-full overflow-hidden">
+    <div className="w-full max-w-none mx-auto bg-card rounded-xl border border-border shadow-lg flex flex-col h-full overflow-hidden">
 
       {/* Header: avatar + name/role/correlation */}
-      <div className="flex items-center space-x-4 p-6 border-b border-gray-200/60 bg-gray-50/30 rounded-t-xl">
+      <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center border-b border-border bg-surface-subtle rounded-t-xl">
         {/* Image upload */}
-        <div className="w-28 h-28 rounded-lg bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-200/60 overflow-hidden flex items-center justify-center relative group cursor-pointer shadow-sm">
+        <div className="w-28 h-28 rounded-lg bg-gradient-to-br from-surface-muted to-surface-subtle border border-border overflow-hidden flex items-center justify-center relative group cursor-pointer shadow-sm">
           {editFields.imageUrl ? (
             <img src={editFields.imageUrl} alt={editFields.name} className="object-cover w-full h-full" />
           ) : (
-            <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <circle cx="12" cy="8" r="4" />
               <path d="M6 20c0-2.2 3-4 6-4s6 1.8 6 4" />
             </svg>
@@ -337,29 +337,29 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
         </div>
 
         {/* Name / Role / Correlation */}
-        <div className="flex-1 grid grid-cols-3 gap-4">
+        <div className="flex-1 grid gap-4 md:grid-cols-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Name</label>
             <Input
-              className="w-full text-base font-medium bg-white/80 backdrop-blur-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full text-base font-medium bg-background border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.name}
               onChange={e => handleEditFieldChange("name", e.target.value)}
               placeholder="Persona name"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role / Title</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Role / Title</label>
             <Input
-              className="w-full text-base bg-white/80 backdrop-blur-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full text-base bg-background border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.position}
               onChange={e => handleEditFieldChange("position", e.target.value)}
               placeholder="Job title or role"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Relation to Student</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Relation to Student</label>
             <Input
-              className="w-full text-base bg-white/80 backdrop-blur-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full text-base bg-background border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.correlation || ""}
               onChange={e => handleEditFieldChange("correlation", e.target.value)}
               placeholder="e.g. Direct supervisor, peer, client..."
@@ -369,14 +369,14 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
       </div>
 
       {/* Main content — 3 columns */}
-      <div className="grid grid-cols-3 gap-6 p-6 overflow-y-auto flex-1">
+      <div className="grid gap-6 lg:grid-cols-3 p-6 overflow-y-auto flex-1">
 
         {/* Left: Background + Current Context */}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Background</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Background</label>
             <Textarea
-              className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[140px] text-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full bg-background resize-none min-h-[140px] text-sm border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.description}
               onChange={e => handleEditFieldChange("description", e.target.value)}
               placeholder="Professional history, experience, and organizational context..."
@@ -384,9 +384,9 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Current Context</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Current Context</label>
             <Textarea
-              className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[120px] text-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full bg-background resize-none min-h-[120px] text-sm border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.currentContext || ""}
               onChange={e => handleEditFieldChange("currentContext", e.target.value)}
               placeholder="Current responsibilities, challenges, and perspective in this case..."
@@ -394,9 +394,9 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Communication Style</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Communication Style</label>
             <Input
-              className="w-full bg-white/80 backdrop-blur-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md text-sm"
+              className="w-full bg-background border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md text-sm"
               value={editFields.communicationStyle || ""}
               onChange={e => handleEditFieldChange("communicationStyle", e.target.value)}
               placeholder="e.g. Direct and data-driven, diplomatic but firm..."
@@ -408,20 +408,20 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-medium text-gray-700">Personality (Big Five)</label>
+              <label className="block text-sm font-medium text-foreground">Personality (Big Five)</label>
               <Button size="sm" variant="outline" className="text-xs" onClick={handleReset}>
                 Reset
               </Button>
             </div>
-            <p className="text-xs text-gray-500 mb-3">1 = lowest · 10 = highest</p>
+            <p className="text-xs text-muted-foreground mb-3">1 = lowest · 10 = highest</p>
             <div className="space-y-3">
               {traitLabels.map(({ key, label }) => {
                 const value = editFields.traits[key] ?? 5;
                 return (
                   <div key={key} className="space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium text-gray-700">{label}</span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{value}</span>
+                      <span className="text-sm font-medium text-foreground">{label}</span>
+                      <span className="text-xs text-muted-foreground bg-surface-muted px-2 py-1 rounded">{value}</span>
                     </div>
                     <Slider
                       min={1}
@@ -438,24 +438,24 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Knowledge Areas</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Knowledge Areas</label>
             <Textarea
-              className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[110px] text-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full bg-background resize-none min-h-[110px] text-sm border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.knowledgeAreas || ""}
               onChange={e => handleEditFieldChange("knowledgeAreas", e.target.value)}
               placeholder={"One fact or data point per line:\nQ3 revenue declined 18% to $4.2M\nUnion contract expires March 2024\n..."}
               rows={5}
             />
-            <p className="text-xs text-gray-400 mt-1">One item per line — specific facts, figures, and domain details this persona knows</p>
+            <p className="text-xs text-muted-foreground mt-1">One item per line — specific facts, figures, and domain details this persona knows</p>
           </div>
         </div>
 
         {/* Right: Goals + Advanced Prompt */}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Primary Goals</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Primary Goals</label>
             <Textarea
-              className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[140px] text-sm border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+              className="w-full bg-background resize-none min-h-[140px] text-sm border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
               value={editFields.primaryGoals || ""}
               onChange={e => handleEditFieldChange("primaryGoals", e.target.value)}
               placeholder="What is this persona actively trying to achieve in this simulation?"
@@ -474,7 +474,7 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
                   if (!checked) setEditFields(f => ({ ...f, systemPrompt: "" }));
                 }}
               />
-              <Label htmlFor="advanced-mode" className="text-sm font-medium text-gray-700">
+              <Label htmlFor="advanced-mode" className="text-sm font-medium text-foreground">
                 Custom Prompt
               </Label>
             </div>
@@ -487,15 +487,15 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
 
           {advancedMode && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Identity Prompt</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Identity Prompt</label>
               <Textarea
-                className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[200px] text-xs border-gray-200/80 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md font-mono"
+                className="w-full bg-background resize-none min-h-[200px] text-xs border-border rounded-xl focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md font-mono"
                 value={editFields.systemPrompt || ""}
                 onChange={e => handleEditFieldChange("systemPrompt", e.target.value)}
                 placeholder="Define this persona's voice and expertise. Scene context, behavioral rules, and tone are added automatically by the system."
                 rows={10}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 This text becomes the persona&apos;s identity — scene awareness and tone rules are always applied on top.
               </p>
             </div>
@@ -504,8 +504,8 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
       </div>
 
       {/* Footer */}
-      <div className="flex justify-between items-center p-6 border-t border-gray-200/60 bg-gray-50/50 rounded-b-xl">
-        <div className="text-sm text-gray-600 font-medium">
+      <div className="flex justify-between items-center p-6 border-t border-border bg-surface-subtle rounded-b-xl">
+        <div className="text-sm text-muted-foreground font-medium">
           {advancedMode ? "Custom identity prompt enabled" : "Using auto-generated identity"}
         </div>
         <div className="flex space-x-3">
@@ -513,14 +513,14 @@ ${goals.join("\n") || "• Engage authentically with the student"}${editFields.c
             variant="outline"
             size="sm"
             onClick={() => onDelete && onDelete()}
-            className="text-red-600 border-red-200/80 hover:bg-red-50/80 bg-white/80 backdrop-blur-sm transition-all"
+            className="text-destructive border-destructive/30 hover:bg-destructive/10 bg-background transition-all"
           >
             Delete Persona
           </Button>
           <Button
             size="sm"
             onClick={handleSave}
-            className="btn-gradient text-white border-0 shadow-md hover:shadow-lg transition-all font-semibold"
+            className="font-semibold"
           >
             Save Changes
           </Button>

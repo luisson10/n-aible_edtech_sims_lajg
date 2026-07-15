@@ -39,6 +39,12 @@ class SimulationPublishingResponse(BaseModel):
     is_draft: bool = True
     personas: List[Dict[str, Any]] = []
     scenes: List[Dict[str, Any]] = []
+    grading_prompt: Optional[str] = None
+    grading_config: Optional[Dict[str, Any]] = None
+    rubric_title: Optional[str] = None
+    rubric_criteria: Optional[List[Dict[str, Any]]] = None
+    rubric_performance_levels: Optional[List[Dict[str, Any]]] = None
+    strictness_level: int = 3
     completion_status: Optional[Dict[str, Any]] = None
     name_completed: bool = False
     description_completed: bool = False

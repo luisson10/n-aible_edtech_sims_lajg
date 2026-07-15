@@ -260,6 +260,8 @@ async def test_generate_persona_avatar_includes_personality_cues(mock_settings):
         assert "Alex Rivera" in prompt
         assert "community organizer" in prompt
         assert "waist" in prompt.lower()
+        assert "center" in prompt.lower()
+        assert "margin" in prompt.lower() or "breathing room" in prompt.lower()
         assert "warm" in prompt.lower() or "empathetic" in prompt.lower() or "engaging" in prompt.lower()
         assert mock_store.call_args.kwargs.get("background") == "transparent"
 

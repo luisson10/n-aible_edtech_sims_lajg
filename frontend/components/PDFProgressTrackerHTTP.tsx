@@ -240,30 +240,30 @@ export default function PDFProgressTracker({
   const showProgressBar = true;
 
   const getStatusIcon = (status: string) => {
-    if (status === 'completed') return <CheckCircle2 className="h-5 w-5 text-green-600" />;
-    if (status === 'error') return <XCircle className="h-5 w-5 text-red-600" />;
-    return <Loader2 className="h-5 w-5 animate-spin text-blue-600" />;
+    if (status === 'completed') return <CheckCircle2 className="h-5 w-5 text-primary" />;
+    if (status === 'error') return <XCircle className="h-5 w-5 text-destructive" />;
+    return <Loader2 className="h-5 w-5 animate-spin text-primary motion-reduce:animate-none" />;
   };
 
   const getStatusBg = (status: string) => {
-    if (status === 'completed') return 'bg-gradient-to-br from-green-100 to-green-50';
-    if (status === 'error') return 'bg-gradient-to-br from-red-100 to-red-50';
-    return 'bg-gradient-to-br from-blue-100 to-blue-50';
+    if (status === 'completed') return 'bg-primary/10';
+    if (status === 'error') return 'bg-destructive/10';
+    return 'bg-primary/10';
   };
 
   return (
-    <Card className={`w-full card-elevated bg-white/90 backdrop-blur-sm border border-gray-200/60 rounded-xl shadow-md ${className} animate-fade-scale`}>
-      <CardHeader className="pb-3 border-b border-gray-200/60">
+    <Card className={`w-full border border-border bg-card shadow-sm ${className}`}>
+      <CardHeader className="border-b border-border pb-3">
         <CardTitle className="flex items-center gap-3 text-lg font-bold tracking-tight">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${getStatusBg(progressData?.completed ? 'completed' : progressData?.error ? 'error' : 'in_progress')}`}>
             {getStatusIcon(progressData?.completed ? 'completed' : progressData?.error ? 'error' : 'in_progress')}
           </div>
-          <span className="text-gray-900">PDF Parsing Progress</span>
+          <span className="text-foreground">Generating first draft</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
         {pollingError && (
-          <div className="flex items-center gap-2 text-red-600 mb-4 p-3 bg-red-50/80 backdrop-blur-sm rounded-xl border border-red-200/60 animate-fade-scale">
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-destructive">
             <XCircle className="h-4 w-4 flex-shrink-0" />
             <span className="text-sm font-medium">Error: {pollingError}</span>
           </div>
@@ -272,18 +272,18 @@ export default function PDFProgressTracker({
         {showProgressBar ? (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-gray-900">{overallMessage}</span>
-              <span className="text-sm font-bold text-gray-700">{overallProgress}%</span>
+              <span className="text-sm font-semibold text-foreground">{overallMessage}</span>
+              <span className="text-sm font-bold text-muted-foreground">{overallProgress}%</span>
             </div>
             <Progress value={overallProgress} className="w-full h-2.5" />
           </div>
         ) : (
           <div className="mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-blue-50 rounded-lg flex items-center justify-center shadow-sm">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                <Loader2 className="h-4 w-4 animate-spin text-primary motion-reduce:animate-none" />
               </div>
-              <span className="text-sm font-semibold text-gray-900">{overallMessage}</span>
+              <span className="text-sm font-semibold text-foreground">{overallMessage}</span>
             </div>
           </div>
         )}
@@ -291,9 +291,9 @@ export default function PDFProgressTracker({
         {/* Removed individual stage progress bar - only show overall progress */}
 
         {isPolling && (
-          <div className="mt-4 text-xs text-gray-600 flex items-center gap-2 pt-3 border-t border-gray-200/60">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            <span className="font-medium">Polling for updates...</span>
+          <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+            <span className="font-medium">Listening for updates…</span>
           </div>
         )}
       </CardContent>

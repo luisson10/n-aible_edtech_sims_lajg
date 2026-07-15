@@ -232,13 +232,13 @@ export default function SceneCard({
     );
     return (
       <Card
-        className={`flex flex-row items-stretch w-full max-w-4xl min-h-[140px] p-4 mb-3 card-elevated bg-white/90 backdrop-blur-sm border border-gray-200/60 rounded-xl shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 animate-fade-scale`}
+        className={`flex flex-row items-stretch w-full max-w-4xl min-h-[140px] p-4 mb-3 bg-card border border-border rounded-xl shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 `}
         tabIndex={0}
         aria-label={`Edit scene: ${scene.title}`}
       >
         {/* Left: Image */}
         <div className="flex flex-col items-center justify-center w-40 mr-4">
-          <div className="w-32 h-32 flex items-center justify-center rounded-lg border border-gray-200/60 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden mb-1 shadow-sm">
+          <div className="w-32 h-32 flex items-center justify-center rounded-lg border border-border bg-gradient-to-br from-surface-muted to-surface-subtle overflow-hidden mb-1 shadow-sm">
             {scene.image_url ? (
               <img
                 src={getImageUrl(scene.image_url)}
@@ -247,11 +247,11 @@ export default function SceneCard({
               />
             ) : (
               <div className="text-center">
-                <svg className="w-20 h-20 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-20 h-20 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12,6 12,12 16,14" />
                 </svg>
-                <div className="text-xs text-gray-500 mt-1">No Image</div>
+                <div className="text-xs text-muted-foreground mt-1">No Image</div>
               </div>
             )}
           </div>
@@ -259,15 +259,15 @@ export default function SceneCard({
         {/* Middle: Details */}
         <div className="flex-1 flex flex-col justify-center pr-6">
           <div className="text-xl font-bold leading-tight mb-0.5">{scene.title}</div>
-          <div className="text-base text-gray-500 mb-2">{scene.user_goal}</div>
-          <div className="text-sm text-gray-800 mb-1">{scene.description}</div>
+          <div className="text-base text-muted-foreground mb-2">{scene.user_goal}</div>
+          <div className="text-sm text-foreground mb-1">{scene.description}</div>
           {scene.successMetric && (
-            <div className="text-xs text-slate-800 mt-1">
+            <div className="text-xs text-foreground mt-1">
               <span className="font-semibold">Success Metric:</span> {scene.successMetric}
             </div>
           )}
           {filteredPersonasInvolvedDisplay.length > 0 && (
-            <div className="text-xs text-purple-800 mt-1">
+            <div className="text-xs text-primary mt-1">
               <span className="font-semibold">Personas Involved:</span> {filteredPersonasInvolvedDisplay.join(', ')}
             </div>
           )}
@@ -275,8 +275,8 @@ export default function SceneCard({
         {/* Right: Sequence/Timeout */}
         <div className="flex flex-col justify-center min-w-[120px]">
           <div className="text-center">
-            <div className="text-sm font-medium text-gray-800">Scene Order</div>
-            <div className="text-lg font-bold text-gray-600">{scene.sequence_order}</div>
+            <div className="text-sm font-medium text-foreground">Scene Order</div>
+            <div className="text-lg font-bold text-muted-foreground">{scene.sequence_order}</div>
           </div>
         </div>
       </Card>
@@ -289,58 +289,38 @@ export default function SceneCard({
 
   // Edit mode (TimelineCard style)
   return (
-    <div className="w-full flex flex-col h-full animate-fade-scale relative">
+    <div className="w-full flex flex-col h-full relative">
       {/* Header - outside white container to fully cover rounded corners, extends to cover border and any gaps */}
-      <div className="text-white p-5 rounded-t-xl flex-shrink-0 shadow-lg relative z-20 overflow-hidden"
-           style={{
-             marginLeft: '-4px',
-             marginRight: '-4px',
-             marginTop: '-2px',
-             width: 'calc(100% + 8px)',
-             borderRadius: '0.75rem 0.75rem 0 0',
-             background: 'linear-gradient(to bottom right, rgb(17, 24, 39), rgb(31, 41, 55), rgb(17, 24, 39))',
-             border: 'none',
-             outline: 'none'
-           }}>
-        {/* Additional layer to ensure complete coverage */}
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-t-xl -z-10"
-             style={{
-               top: '-2px',
-               left: '-2px',
-               right: '-2px',
-               bottom: '0',
-               width: 'calc(100% + 4px)',
-               height: 'calc(100% + 2px)'
-             }}></div>
+      <div className="relative z-20 flex-shrink-0 overflow-hidden border-b border-border bg-surface-subtle p-5">
         <div className="flex items-center space-x-3 relative z-10">
-          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+            <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12,6 12,12 16,14" />
             </svg>
           </div>
           <div>
             <h2 className="text-xl font-bold tracking-tight">Scenario Scene</h2>
-            <p className="text-sm text-gray-300 mt-1">Edit the details for this scene in your simulation.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Edit the details for this scene in your simulation.</p>
           </div>
         </div>
       </div>
       {/* White content container - no top rounded corners, positioned to align with header */}
-      <div className="flex-1 bg-white/90 backdrop-blur-sm rounded-b-xl shadow-xl border-x border-b border-gray-200/60 flex flex-col overflow-hidden"
+      <div className="flex-1 bg-card rounded-b-xl shadow-xl border-x border-b border-border flex flex-col overflow-hidden"
            style={{
              marginTop: '0',
              borderTop: 'none'
            }}>
         {/* Content */}
-        <div className="flex-1 p-6 overflow-y-auto bg-white rounded-b-xl">
-        <div className="grid grid-cols-3 gap-6">
+        <div className="flex-1 p-6 overflow-y-auto bg-background rounded-b-xl">
+        <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content Area */}
-          <div className="col-span-3 flex flex-col space-y-4">
+          <div className="lg:col-span-3 flex flex-col space-y-4">
             <div className="flex items-center space-x-4">
               {/* Big icon to the left of both fields */}
               <div className="flex-shrink-0 flex items-center justify-center">
                 <div
-                  className="w-32 h-32 flex items-center justify-center rounded-lg border border-gray-200/60 bg-gradient-to-br from-gray-100 to-gray-50 relative cursor-pointer group shadow-sm hover:shadow-md transition-all"
+                  className="w-32 h-32 flex items-center justify-center rounded-lg border border-border bg-gradient-to-br from-surface-muted to-surface-subtle relative cursor-pointer group shadow-sm hover:shadow-md transition-all"
                   onClick={handleImageClick}
                   title="Click to upload image"
                 >
@@ -353,7 +333,7 @@ export default function SceneCard({
                       />
                       <button
                         type="button"
-                        className="absolute top-1 right-1 bg-white bg-opacity-80 rounded-full p-1 text-gray-700 hover:text-red-600 shadow"
+                        className="absolute top-1 right-1 bg-background bg-opacity-80 rounded-full p-1 text-foreground hover:text-destructive shadow"
                         onClick={e => { e.stopPropagation(); handleRemoveImage(); }}
                         title="Remove image"
                       >
@@ -362,11 +342,11 @@ export default function SceneCard({
                     </>
                   ) : (
                     <>
-                      <svg className="w-20 h-20 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <svg className="w-20 h-20 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="10" />
                         <polyline points="12,6 12,12 16,14" />
                       </svg>
-                      <span className="absolute bottom-1 left-1 text-xs text-gray-500 bg-white bg-opacity-80 rounded px-1 py-0.5 hidden group-hover:block">Upload</span>
+                      <span className="absolute bottom-1 left-1 text-xs text-muted-foreground bg-background bg-opacity-80 rounded px-1 py-0.5 hidden group-hover:block">Upload</span>
                     </>
                   )}
                   <input
@@ -379,30 +359,30 @@ export default function SceneCard({
                 </div>
               </div>
               <div className="flex-1">
-                <span className="block text-gray-700 font-semibold text-sm">Scene Title</span>
+                <span className="block text-foreground font-semibold text-sm">Scene Title</span>
                 <Input
                   id="scene-title"
-                  className="mt-1 block w-full rounded-xl bg-white/80 backdrop-blur-sm border-gray-200/80 text-sm font-medium focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                  className="mt-1 block w-full rounded-xl bg-background border-border text-sm font-medium focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                   value={editFields.title}
                   onChange={e => handleFieldChange("title", e.target.value)}
                   placeholder="Scene Title"
                 />
-                <span className="block text-gray-700 font-semibold mt-2 text-sm">Goal</span>
+                <span className="block text-foreground font-semibold mt-2 text-sm">Goal</span>
                 <Input
                   id="scene-goal"
-                  className="mt-1 block w-full rounded-xl bg-white/80 backdrop-blur-sm border-gray-200/80 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                  className="mt-1 block w-full rounded-xl bg-background border-border text-sm focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                   value={editFields.user_goal}
                   onChange={e => handleFieldChange("user_goal", e.target.value)}
                   placeholder="Core challenge for this scene."
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <span className="block text-lg font-bold text-gray-800 mb-2">Scene Description</span>
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <span className="block text-lg font-bold text-foreground mb-2">Scene Description</span>
                 <Textarea
                   id="scene-description"
-                  className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[200px] text-sm border border-gray-200/80 rounded-xl text-gray-700 focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                  className="w-full bg-background resize-none min-h-[200px] text-sm border border-border rounded-xl text-foreground focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                   value={editFields.description}
                   onChange={e => handleFieldChange("description", e.target.value)}
                   placeholder="Description of what happens in this scene."
@@ -410,14 +390,14 @@ export default function SceneCard({
                 />
                 {/* Personas involved pills/chips UI */}
                 <div className="mt-4">
-                  <span className="block text-xs font-semibold text-purple-800 mb-1">Persona Involved in this Scene:</span>
+                  <span className="block text-xs font-semibold text-primary mb-1">Persona Involved in this Scene:</span>
                   <div className="flex flex-wrap gap-2 mb-2">
                     {chipsPersonasInvolved.map((persona, idx) => (
-                      <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full bg-purple-100 text-purple-800 text-xs font-medium shadow-sm">
+                      <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium shadow-sm">
                         {persona}
                         <button
                           type="button"
-                          className="ml-2 text-purple-600 hover:text-purple-900 focus:outline-none"
+                          className="ml-2 text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => handlePersonaToggle(persona)}
                           aria-label={`Remove ${persona}`}
                         >
@@ -429,22 +409,22 @@ export default function SceneCard({
                   {/* Dropdown to add more personas, excluding student role */}
                   <div className="relative mt-1 w-full">
                     <select
-                      className="appearance-none w-full rounded-lg border border-purple-300 bg-white text-xs text-gray-800 px-3 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all cursor-pointer"
+                      className="appearance-none w-full rounded-lg border border-border bg-background text-xs text-foreground px-3 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring transition-all cursor-pointer"
                       value=""
                       onChange={e => {
                         const val = e.target.value;
                         if (val) handlePersonaToggle(val);
                       }}
                     >
-                      <option value="" disabled className="text-gray-400">+ Add persona...</option>
+                      <option value="" disabled className="text-muted-foreground">+ Add persona...</option>
                       {allPersonas
                         .filter(p => normalizeName(p.name) !== normStudentRole && !editFields.personas_involved.includes(p.name))
                         .map((persona, idx) => (
-                          <option key={idx} value={persona.name} className="hover:bg-purple-100">{persona.name}</option>
+                          <option key={idx} value={persona.name} className="hover:bg-primary/10">{persona.name}</option>
                         ))}
                     </select>
                     {/* Custom caret icon */}
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-purple-400">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-primary">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path d="M6 9l6 6 6-6" />
                       </svg>
@@ -454,11 +434,11 @@ export default function SceneCard({
               </div>
               <div className="flex flex-col space-y-4">
                 <div>
-                  <span className="block text-lg font-bold text-gray-800 mb-2">Scene Order</span>
+                  <span className="block text-lg font-bold text-foreground mb-2">Scene Order</span>
                   <Input
                     id="scene-sequence-order"
                     type="number"
-                    className="mt-1 block w-full rounded-xl bg-white/80 backdrop-blur-sm border-gray-200/80 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                    className="mt-1 block w-full rounded-xl bg-background border-border text-sm focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                     value={editFields.sequence_order}
                     onChange={e => handleFieldChange("sequence_order", parseInt(e.target.value) || 1)}
                     placeholder="Scene order in the simulation."
@@ -466,11 +446,11 @@ export default function SceneCard({
                   />
                 </div>
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm">Timeout Turns</span>
+                  <span className="block text-foreground font-semibold text-sm">Timeout Turns</span>
                   <Input
                     id="scene-timeout-turns"
                     type="number"
-                    className="mt-1 block w-full rounded-xl bg-white/80 backdrop-blur-sm border-gray-200/80 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                    className="mt-1 block w-full rounded-xl bg-background border-border text-sm focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                     value={editFields.timeout_turns}
                     onChange={e => handleFieldChange("timeout_turns", e.target.value)}
                     placeholder="Turns before the scenario ends."
@@ -478,10 +458,10 @@ export default function SceneCard({
                   />
                 </div>
                 <div>
-                  <span className="block text-lg font-bold text-gray-800 mb-2">Success Metric</span>
+                  <span className="block text-lg font-bold text-foreground mb-2">Success Metric</span>
                   <Textarea
                     id="scene-success-metric"
-                    className="w-full bg-white/80 backdrop-blur-sm resize-none min-h-[150px] text-sm border border-gray-200/80 rounded-xl text-gray-700 focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 transition-all shadow-sm hover:shadow-md"
+                    className="w-full bg-background resize-none min-h-[150px] text-sm border border-border rounded-xl text-foreground focus:ring-2 focus:ring-ring focus:border-ring transition-all shadow-sm hover:shadow-md"
                     value={editFields.successMetric}
                     onChange={e => handleFieldChange("successMetric", e.target.value)}
                     placeholder="How to measure success in this scene."
@@ -489,11 +469,11 @@ export default function SceneCard({
                   />
                 </div>
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm mb-1">Scene Type</span>
+                  <span className="block text-foreground font-semibold text-sm mb-1">Scene Type</span>
                   <select
                     value={editFields.scene_type}
                     onChange={e => handleFieldChange("scene_type", e.target.value)}
-                    className="w-full rounded-xl border border-gray-200/80 bg-white/80 px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400/50 shadow-sm"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:border-ring shadow-sm"
                   >
                     <option value="conversation">Conversation (default)</option>
                     <option value="code_challenge">Code Challenge</option>
@@ -504,61 +484,61 @@ export default function SceneCard({
 
             {/* Code Challenge Fields */}
             {editFields.scene_type === "code_challenge" && (
-              <div className="col-span-3 space-y-4 p-4 bg-gray-50 rounded-xl border border-gray-200/60">
-                <h3 className="text-sm font-bold text-gray-800">Code Challenge Settings</h3>
+              <div className="lg:col-span-3 space-y-4 p-4 bg-surface-subtle rounded-xl border border-border">
+                <h3 className="text-sm font-bold text-foreground">Code Challenge Settings</h3>
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm mb-1">Starter Code</span>
+                  <span className="block text-foreground font-semibold text-sm mb-1">Starter Code</span>
                   <Textarea
                     value={editFields.starter_code}
                     onChange={e => handleFieldChange("starter_code", e.target.value)}
-                    className="w-full font-mono text-sm bg-white border border-gray-200/80 rounded-xl min-h-[120px] focus:ring-2 focus:ring-slate-500/20 shadow-sm"
+                    className="w-full font-mono text-sm bg-background border border-border rounded-xl min-h-[120px] focus:ring-2 focus:ring-ring shadow-sm"
                     placeholder="# Pre-filled code template for students..."
                     rows={6}
                   />
                 </div>
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm mb-1">Grading Rubric</span>
+                  <span className="block text-foreground font-semibold text-sm mb-1">Grading Rubric</span>
                   <Textarea
                     value={editFields.rubric_prompt}
                     onChange={e => handleFieldChange("rubric_prompt", e.target.value)}
-                    className="w-full text-sm bg-white border border-gray-200/80 rounded-xl min-h-[80px] focus:ring-2 focus:ring-slate-500/20 shadow-sm"
+                    className="w-full text-sm bg-background border border-border rounded-xl min-h-[80px] focus:ring-2 focus:ring-ring shadow-sm"
                     placeholder="Students should calculate runway under both scenarios..."
                     rows={3}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <span className="block text-gray-700 font-semibold text-sm mb-1">Expected Output Columns</span>
+                    <span className="block text-foreground font-semibold text-sm mb-1">Expected Output Columns</span>
                     <Input
                       value={editFields.expected_columns}
                       onChange={e => handleFieldChange("expected_columns", e.target.value)}
-                      className="text-sm bg-white border border-gray-200/80 rounded-xl shadow-sm"
+                      className="text-sm bg-background border border-border rounded-xl shadow-sm"
                       placeholder="revenue, costs, cash_balance"
                     />
-                    <p className="text-xs text-gray-400 mt-1">Comma-separated column names</p>
+                    <p className="text-xs text-muted-foreground mt-1">Comma-separated column names</p>
                   </div>
                   <div>
-                    <span className="block text-gray-700 font-semibold text-sm mb-1">Min Expected Rows</span>
+                    <span className="block text-foreground font-semibold text-sm mb-1">Min Expected Rows</span>
                     <Input
                       type="number"
                       value={editFields.expected_rows_min}
                       onChange={e => handleFieldChange("expected_rows_min", e.target.value)}
-                      className="text-sm bg-white border border-gray-200/80 rounded-xl shadow-sm"
+                      className="text-sm bg-background border border-border rounded-xl shadow-sm"
                       placeholder="24"
                     />
                   </div>
                 </div>
                 {/* Data Files */}
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm mb-1">Data Files</span>
-                  <p className="text-xs text-gray-400 mb-2">Upload CSV, JSON, or Excel files that students will analyze</p>
+                  <span className="block text-foreground font-semibold text-sm mb-1">Data Files</span>
+                  <p className="text-xs text-muted-foreground mb-2">Upload CSV, JSON, or Excel files that students will analyze</p>
                   <div className="space-y-2 mb-2">
                     {dataFiles.map((f, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-white border border-gray-200/80 rounded-lg text-sm">
-                        <span className="text-gray-700 truncate">{f.filename}</span>
+                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-background border border-border rounded-lg text-sm">
+                        <span className="text-foreground truncate">{f.filename}</span>
                         <button
                           type="button"
-                          className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                          className="ml-2 text-destructive hover:text-destructive/80 text-xs"
                           onClick={() => setDataFiles(prev => prev.filter((_, i) => i !== idx))}
                         >
                           Remove
@@ -568,7 +548,7 @@ export default function SceneCard({
                   </div>
                   <button
                     type="button"
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="text-sm text-primary hover:text-primary/80 font-medium"
                     onClick={() => dataFileInputRef.current?.click()}
                   >
                     + Add data file
@@ -584,15 +564,15 @@ export default function SceneCard({
                 </div>
                 {/* Reference Files */}
                 <div>
-                  <span className="block text-gray-700 font-semibold text-sm mb-1">Reference Files</span>
-                  <p className="text-xs text-gray-400 mb-2">Upload reference materials (solution keys, documentation)</p>
+                  <span className="block text-foreground font-semibold text-sm mb-1">Reference Files</span>
+                  <p className="text-xs text-muted-foreground mb-2">Upload reference materials (solution keys, documentation)</p>
                   <div className="space-y-2 mb-2">
                     {referenceFiles.map((f, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-white border border-gray-200/80 rounded-lg text-sm">
-                        <span className="text-gray-700 truncate">{f.filename}</span>
+                      <div key={idx} className="flex items-center justify-between px-3 py-2 bg-background border border-border rounded-lg text-sm">
+                        <span className="text-foreground truncate">{f.filename}</span>
                         <button
                           type="button"
-                          className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                          className="ml-2 text-destructive hover:text-destructive/80 text-xs"
                           onClick={() => setReferenceFiles(prev => prev.filter((_, i) => i !== idx))}
                         >
                           Remove
@@ -602,7 +582,7 @@ export default function SceneCard({
                   </div>
                   <button
                     type="button"
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="text-sm text-primary hover:text-primary/80 font-medium"
                     onClick={() => refFileInputRef.current?.click()}
                   >
                     + Add reference file
@@ -622,18 +602,18 @@ export default function SceneCard({
         </div>
         </div>
         {/* Action Buttons - Fixed at bottom */}
-        <div className="flex justify-end space-x-4 p-5 border-t border-gray-200/60 bg-gray-50/50 rounded-b-xl flex-shrink-0">
+        <div className="flex justify-end space-x-4 p-5 border-t border-border bg-surface-subtle rounded-b-xl flex-shrink-0">
           <Button 
             id="scene-delete-button"
             variant="outline"
-            className="px-4 py-2 text-red-600 border-red-200/80 hover:bg-red-50/80 bg-white/80 backdrop-blur-sm transition-all"
+            className="px-4 py-2 text-destructive border-destructive/30 hover:bg-destructive/10 bg-background transition-all"
             onClick={handleDelete}
           >
             Delete
           </Button>
           <Button 
             id="scene-save-button"
-            className="px-4 py-2 btn-gradient text-white border-0 shadow-md hover:shadow-lg transition-all font-semibold"
+            className="px-4 py-2 font-semibold"
             onClick={handleSave}
           >
             Save
@@ -642,4 +622,4 @@ export default function SceneCard({
       </div>
     </div>
   );
-} 
+}

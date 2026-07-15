@@ -179,6 +179,12 @@ async def build_simulation_responses_batched(
             "updated_at": simulation.updated_at,
             "status": simulation.status or "draft",
             "is_draft": simulation.is_draft if simulation.is_draft is not None else False,
+            "grading_prompt": simulation.grading_prompt,
+            "grading_config": simulation.grading_config or {},
+            "rubric_title": (simulation.grading_config or {}).get("title"),
+            "rubric_criteria": (simulation.grading_config or {}).get("criteria"),
+            "rubric_performance_levels": (simulation.grading_config or {}).get("performance_levels"),
+            "strictness_level": int((simulation.grading_config or {}).get("strictness_level", 3)),
             "personas": [
                 {
                     "id": persona.id,
@@ -444,6 +450,12 @@ async def build_simulation_response(simulation: Simulation, db: Session) -> Dict
         "updated_at": simulation.updated_at,
         "status": simulation.status or "draft",
         "is_draft": simulation.is_draft if simulation.is_draft is not None else False,
+        "grading_prompt": simulation.grading_prompt,
+        "grading_config": simulation.grading_config or {},
+        "rubric_title": (simulation.grading_config or {}).get("title"),
+        "rubric_criteria": (simulation.grading_config or {}).get("criteria"),
+        "rubric_performance_levels": (simulation.grading_config or {}).get("performance_levels"),
+        "strictness_level": int((simulation.grading_config or {}).get("strictness_level", 3)),
         "personas": [
             {
                 "id": persona.id,

@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useRef, useEffect, useCallback } from "react"
-import { createPortal } from "react-dom"
 import { debugLog } from "@/lib/debug"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
@@ -12,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Progress } from "@/components/ui/progress"
-import { Upload, Info, Users, Activity, Sparkles, X, Check, Target, Settings, ArrowLeft, ChevronDown, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Upload, Users, Activity, Sparkles, X, Check, Target, ArrowLeft, Plus, RefreshCw, Trash2, FileText, BookOpen, UserRound, ListOrdered, ClipboardCheck, Rocket, Save, Play, Loader2, CircleCheck, ImageIcon, FileUp } from "lucide-react"
 import Link from "next/link"
 import PersonaCard from "@/components/PersonaCard";
 import SceneCard from "@/components/SceneCard";
@@ -21,16 +20,22 @@ import SimulationBuilderProgress from "@/components/SimulationBuilderProgress"
 import PDFProgressTrackerHTTP from "@/components/PDFProgressTrackerHTTP"
 import { usePDFParsingWithProgress } from "@/hooks/usePDFParsingWithProgress"
 import { apiClient, buildApiUrl } from "@/lib/api"
-
-// Type definition for rubric configuration
-interface RubricConfig {
-  title: string;
-  performanceLevels: Array<{ name: string; points: number }>;
-  criteria: Array<{
-    description: string;
-    descriptions: Record<string, string>;
-  }>;
-}
+import { getImageUrl } from "@/lib/image-utils"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
+import { AssessmentEditor } from "@/components/simulation-builder/AssessmentEditor"
+import { MobileStudioProgress, StudioFooter, StudioStepRail } from "@/components/simulation-builder/StudioNavigation"
+import {
+  createDefaultRubricConfig,
+  DEFAULT_STRICTNESS_LEVEL,
+  gradingStateFromDraft,
+  hasSavedAssessmentFields,
+  RubricConfig,
+  SIMULATION_STUDIO_STEPS,
+  SimulationStudioStep,
+} from "@/lib/simulation-builder"
 
 // ─── Persona mapping helper ───────────────────────────────────────────────────
 // Maps a raw key_figure object (from AI extraction API response) to the shape
@@ -72,150 +77,6 @@ function mapFigureToPersona(figure: any, index: number) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Simple Modal component
-function Modal({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children: React.ReactNode }) {
- React.useEffect(() => {
-   if (isOpen) {
-     document.body.classList.add('overflow-hidden');
-   } else {
-     document.body.classList.remove('overflow-hidden');
-   }
-   return () => {
-     document.body.classList.remove('overflow-hidden');
-   };
- }, [isOpen]);
- if (!isOpen) return null;
-
- const modalContent = (
-   <div 
-     className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900 bg-opacity-60"
-     style={{ 
-       position: 'fixed',
-       left: 0, 
-       right: 0, 
-       top: 0, 
-       bottom: 0,
-       zIndex: 9999
-     }}
-   >
-     <div className="bg-white rounded-lg shadow-lg w-[760px] h-[80vh] flex flex-col relative p-0 resize-none">
-       <button
-         className="absolute top-4 right-4 text-gray-400 text-2xl font-bold hover:text-gray-600 z-10"
-         onClick={onClose}
-         aria-label="Close edit window"
-       >
-         &times;
-       </button>
-       {children}
-     </div>
-   </div>
- );
-
- // Use portal to render modal at document body level
- if (typeof window !== 'undefined') {
-   return createPortal(modalContent, document.body);
- }
- 
- return null;
-}
-
-function PersonaModal({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children: React.ReactNode }) {
- React.useEffect(() => {
-   if (isOpen) {
-     document.body.classList.add('overflow-hidden');
-   } else {
-     document.body.classList.remove('overflow-hidden');
-   }
-   return () => {
-     document.body.classList.remove('overflow-hidden');
-   };
- }, [isOpen]);
- if (!isOpen) return null;
-
- const modalContent = (
-   <div 
-     className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50 p-4"
-     style={{ 
-       position: 'fixed',
-       left: 0, 
-       right: 0, 
-       top: 0, 
-       bottom: 0,
-       zIndex: 9999
-     }}
-   >
-     <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[95vh] flex flex-col relative overflow-hidden">
-       <button
-         className="absolute top-1 right-1 text-gray-400 text-2xl font-bold hover:text-gray-600 z-10 w-10 h-10 flex items-center justify-center"
-         onClick={onClose}
-         aria-label="Close edit window"
-       >
-         &times;
-       </button>
-       <div className="flex-1 overflow-y-auto flex flex-col">
-         {children}
-       </div>
-     </div>
-   </div>
- );
-
- // Use portal to render modal at document body level
- if (typeof window !== 'undefined') {
-   return createPortal(modalContent, document.body);
- }
- 
- return null;
-}
-
-function SceneModal({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children: React.ReactNode }) {
- React.useEffect(() => {
-   if (isOpen) {
-     document.body.classList.add('overflow-hidden');
-   } else {
-     document.body.classList.remove('overflow-hidden');
-   }
-   return () => {
-     document.body.classList.remove('overflow-hidden');
-   };
- }, [isOpen]);
- if (!isOpen) return null;
-
- const modalContent = (
-   <div 
-     className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900 bg-opacity-60"
-     style={{ 
-       position: 'fixed',
-       left: 0, 
-       right: 0, 
-       top: 0, 
-       bottom: 0,
-       zIndex: 9999
-     }}
-   >
-     <div className="bg-white rounded-lg shadow-lg w-[1000px] h-[95vh] flex flex-col relative p-0 resize-none overflow-hidden">
-       <button
-         className="absolute top-4 right-4 text-gray-400 text-2xl font-bold hover:text-gray-600 z-10"
-         onClick={onClose}
-         aria-label="Close edit window"
-       >
-         &times;
-       </button>
-       <div className="flex-1 overflow-y-auto flex flex-col">
-         {children}
-       </div>
-     </div>
-   </div>
- );
-
- // Use portal to render modal at document body level
- if (typeof window !== 'undefined') {
-   return createPortal(modalContent, document.body);
- }
- 
- return null;
-}
-
-
 export default function SimulationBuilder() {
   const router = useRouter()
   const { user, logout, isLoading: authLoading } = useAuth()
@@ -246,10 +107,7 @@ export default function SimulationBuilder() {
  const [autofillProgress, setAutofillProgress] = useState(0)
  const [autofillMaxAttempts, setAutofillMaxAttempts] = useState(60)
  const [isDragOver, setIsDragOver] = useState(false)
-const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // For the "Upload Files" button
-const [existingGradingMaterials, setExistingGradingMaterials] = useState<any[]>([]); // Already uploaded materials
-const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set()); // Track files currently being uploaded
-const [processingMaterials, setProcessingMaterials] = useState<Set<number>>(new Set()); // Track materials being processed
+const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Additional source/reference files
   const filesInputRef = useRef<HTMLInputElement>(null);
   const hasLoadedDraft = useRef(false); // Track if draft has been loaded
   const isRestoringFromStorage = useRef(false); // Track if we're restoring from localStorage
@@ -295,66 +153,19 @@ useEffect(() => {
 
   // Rubric Configuration state
   const [gradingPrompt, setGradingPrompt] = useState("");
-  const [rubricConfig, setRubricConfig] = useState<RubricConfig>({
-    title: "Case Study Analysis",
-    performanceLevels: [
-      { name: "Outstanding", points: 25 },
-      { name: "Excellent", points: 20 },
-      { name: "Good", points: 15 },
-      { name: "Fair", points: 10 },
-      { name: "Poor", points: 5 }
-    ],
-    criteria: [
-      {
-        description: "Analysis of major issues in the case",
-        descriptions: {
-          "Outstanding": "Presents an extremely thorough and insightful analysis of all major issues in the case. Conclusions are well justified by factual and computational support.",
-          "Excellent": "Presents a strong analysis of most of the major issues in the case but has some limitations and lacks full depth in some areas. Some conclusions may lack support.",
-          "Good": "Presents a good analysis of most of the major issues in the case but lacks depth in some areas. Some conclusions may lack support.",
-          "Fair": "Presents an adequate yet limited analysis of most of the major issues in the case but lacks depth in several areas. Conclusions may lack support.",
-          "Poor": "The level of analysis lacks adequate depth and/or factual and computational support for analysis is omitted."
-        }
-      },
-      {
-        description: "Quality and feasibility of recommendations",
-        descriptions: {
-          "Outstanding": "Recommendations are detailed and insightful and together compose a thorough plan to address major challenges.",
-          "Excellent": "Recommendations are excellent to address major issues and are linked to the analysis. Almost all anticipated consequences and alternatives are included.",
-          "Good": "Recommendations are strong to address major issues and are somewhat but not fully linked to the analysis. Some anticipated consequences and alternatives are included.",
-          "Fair": "Recommendations are appropriate to address major issues and are linked to the analysis. Some anticipated consequences and alternatives are included.",
-          "Poor": "Recommendations are mostly appropriate to address issues and are at least partially linked to the analysis. Anticipated consequences and alternatives are lacking."
-        }
-      }
-    ]
-  });
-
-  // Load grading materials when simulation is saved
-  useEffect(() => {
-    if (savedSimulationId) {
-      loadGradingMaterials(savedSimulationId);
-    }
-  }, [savedSimulationId]);
-
-  // Load grading materials when component mounts if we have a saved simulation
-  useEffect(() => {
-    if (savedSimulationId) {
-      loadGradingMaterials(savedSimulationId);
-    }
-  }, []); // Empty dependency array means this runs once on mount
-
-  // Check processing status periodically
-  useEffect(() => {
-    if (savedSimulationId && processingMaterials.size > 0) {
-      const interval = setInterval(() => {
-        checkProcessingStatus(savedSimulationId);
-      }, 3000); // Check every 3 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [savedSimulationId, processingMaterials.size]);
-
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'configuration' | 'grading'>('configuration');
+  const [rubricConfig, setRubricConfig] = useState<RubricConfig>(() => createDefaultRubricConfig());
+  const [strictnessLevel, setStrictnessLevel] = useState(DEFAULT_STRICTNESS_LEVEL)
+  const [assessmentReady, setAssessmentReady] = useState(false)
+  const [currentStep, setCurrentStep] = useState<SimulationStudioStep>("source")
+  const hasProfessorChangedStep = useRef(false)
+  const handleStepChange = useCallback((step: SimulationStudioStep) => {
+    hasProfessorChangedStep.current = true
+    setCurrentStep(step)
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion ? "auto" : "smooth" })
+    })
+  }, [])
 
  // Authentication logic - must be after all hooks
  useEffect(() => {
@@ -410,25 +221,13 @@ useEffect(() => {
           
           setDbCompletionFields(completionFields);
           
-          // Load grading prompt if available
-          if (draftData.grading_prompt !== undefined) {
-            setGradingPrompt(draftData.grading_prompt || "");
-            debugLog("Loaded grading prompt:", draftData.grading_prompt);
-          }
-          
-          // Load rubric configuration if available
-          if (draftData.rubric_title !== undefined || draftData.rubric_criteria !== undefined || draftData.rubric_performance_levels !== undefined) {
-            setRubricConfig(prev => ({
-              ...prev,
-              title: draftData.rubric_title || prev.title,
-              performanceLevels: draftData.rubric_performance_levels || prev.performanceLevels,
-              criteria: draftData.rubric_criteria || prev.criteria
-            }));
-            debugLog("Loaded rubric configuration:", {
-              title: draftData.rubric_title,
-              performanceLevels: draftData.rubric_performance_levels,
-              criteria: draftData.rubric_criteria
-            });
+          const grading = gradingStateFromDraft(draftData)
+          setGradingPrompt(grading.gradingPrompt)
+          setRubricConfig(grading.rubricConfig)
+          setStrictnessLevel(grading.strictnessLevel)
+          setAssessmentReady(hasSavedAssessmentFields(draftData))
+          if (!hasProfessorChangedStep.current) {
+            setCurrentStep("foundations")
           }
            
            // Handle learning objectives - check if it's an array or string
@@ -575,6 +374,10 @@ useEffect(() => {
                }
                if (formData.gradingPrompt !== undefined) setGradingPrompt(formData.gradingPrompt);
                if (formData.rubricConfig) setRubricConfig(formData.rubricConfig);
+               if (formData.strictnessLevel !== undefined) {
+                 setStrictnessLevel(Math.max(1, Math.min(5, Number(formData.strictnessLevel) || DEFAULT_STRICTNESS_LEVEL)));
+               }
+               if (formData.assessmentReady === true) setAssessmentReady(true);
                if (formData.autofillResult) setAutofillResult(formData.autofillResult);
                if (formData.isSaved !== undefined) setIsSaved(formData.isSaved);
                debugLog("Restored unsaved work from localStorage");
@@ -756,6 +559,7 @@ const autoSaveToDatabase = useCallback(async () => {
       rubric_criteria: rubricConfig.criteria,
       rubric_performance_levels: rubricConfig.performanceLevels,
       grading_prompt: gradingPrompt,
+      strictness_level: strictnessLevel,
       completion_status: {
         name_completed: !!name?.trim() || !!autofillResult,
         description_completed: !!description?.trim() || !!autofillResult,
@@ -792,7 +596,7 @@ const autoSaveToDatabase = useCallback(async () => {
     // Silently fail - don't show alerts for auto-save failures
     debugLog("Auto-save to database error (silent):", error);
   }
-}, [savedSimulationId, isSaving, isPublishing, name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, autofillResult, aiEnhancementComplete, isParsingWithProgress, parsingError]);
+}, [savedSimulationId, isSaving, isPublishing, name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, strictnessLevel, autofillResult, aiEnhancementComplete, isParsingWithProgress, parsingError]);
 
 // Auto-save to localStorage and database whenever form data changes
 useEffect(() => {
@@ -831,7 +635,7 @@ useEffect(() => {
   }, 300); // Save 300ms after last change
   
   return () => clearTimeout(timeoutId);
-}, [name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, autofillResult, savedSimulationId, isSaved, user, authLoading, isSaving, isPublishing, isParsingWithProgress, autoSaveToDatabase])
+}, [name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, strictnessLevel, assessmentReady, autofillResult, savedSimulationId, isSaved, user, authLoading, isSaving, isPublishing, isParsingWithProgress, autoSaveToDatabase])
 
 // Final save on unmount (when user navigates away)
 useEffect(() => {
@@ -862,10 +666,10 @@ useEffect(() => {
  // Show loading while auth is being checked
  if (authLoading) {
    return (
-     <div className="min-h-screen bg-white flex items-center justify-center">
+     <div className="flex min-h-screen items-center justify-center bg-background">
        <div className="text-center">
-         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
-         <p className="text-black">Loading...</p>
+         <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-muted border-t-primary motion-reduce:animate-none"></div>
+         <p className="text-foreground">Loading...</p>
        </div>
      </div>
    )
@@ -874,176 +678,13 @@ useEffect(() => {
  // If no user, show redirecting message (navigation handled in useEffect)
  if (!user) {
    return (
-     <div className="min-h-screen bg-white flex items-center justify-center">
+     <div className="flex min-h-screen items-center justify-center bg-background">
        <div className="text-center">
-         <p className="text-black">Redirecting...</p>
+         <p className="text-foreground">Redirecting...</p>
        </div>
      </div>
    )
  }
-
-// Load existing grading materials for a simulation
-const loadGradingMaterials = async (simulationId: number): Promise<void> => {
-  try {
-    const response = await apiClient.apiRequest(
-      `/professor/simulations/${simulationId}/grading-materials`,
-      { method: 'GET' }
-    );
-    
-    if (response.ok) {
-      const result = await response.json();
-      const materials = result.materials || [];
-      debugLog(`Loaded ${materials.length} existing grading materials`);
-      setExistingGradingMaterials(materials);
-      
-      // Update processing materials set
-      const stillProcessing = new Set<number>();
-      materials.forEach((material: any) => {
-        if (material.processing_status === 'pending' || material.processing_status === 'processing') {
-          stillProcessing.add(material.id);
-        }
-      });
-      setProcessingMaterials(stillProcessing);
-    }
-  } catch (error) {
-    debugLog("Error loading grading materials:", error);
-  }
-};
-
-// Delete grading material
-const deleteGradingMaterial = async (materialId: number): Promise<void> => {
-  try {
-    debugLog(`Deleting grading material ${materialId}`);
-    
-    const response = await apiClient.apiRequest(
-      `/professor/grading-materials/${materialId}`,
-      { method: 'DELETE' }
-    );
-    
-    if (response.ok) {
-      debugLog(`Successfully deleted grading material ${materialId}`);
-      // Reload the materials list
-      if (savedSimulationId) {
-        await loadGradingMaterials(savedSimulationId);
-      }
-    } else {
-      console.error(`Failed to delete material ${materialId}:`, await response.text());
-    }
-  } catch (error) {
-    console.error(`Error deleting material ${materialId}:`, error);
-  }
-};
-
-// Upload a single file immediately when selected
-const uploadFileImmediately = async (file: File, simulationId: number): Promise<void> => {
-  const fileKey = `${file.name}-${file.size}`;
-  
-  try {
-    // Add to uploading set
-    setUploadingFiles(prev => new Set(prev).add(fileKey));
-    
-    debugLog(`Uploading file immediately: ${file.name}`);
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const response = await apiClient.apiRequest(
-      `/professor/simulations/${simulationId}/grading-materials`,
-      {
-        method: 'POST',
-        body: formData,
-      }
-    );
-    
-    if (response.ok) {
-      const result = await response.json();
-      debugLog(`Successfully uploaded grading material: ${file.name} (ID: ${result.material.id})`);
-      
-      // Add to processing set if not completed
-      if (result.material.processing_status !== 'completed') {
-        setProcessingMaterials(prev => new Set(prev).add(result.material.id));
-      }
-      
-      // Reload materials to show the new one
-      await loadGradingMaterials(simulationId);
-    } else {
-      console.error(`Failed to upload ${file.name}:`, await response.text());
-    }
-  } catch (error) {
-    console.error(`Error uploading ${file.name}:`, error);
-  } finally {
-    // Remove from uploading set
-    setUploadingFiles(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(fileKey);
-      return newSet;
-    });
-  }
-};
-
-// Check and update processing status of materials
-const checkProcessingStatus = async (simulationId: number): Promise<void> => {
-  try {
-    const response = await apiClient.apiRequest(
-      `/professor/simulations/${simulationId}/grading-materials`,
-      { method: 'GET' }
-    );
-    
-    if (response.ok) {
-      const result = await response.json();
-      const materials = result.materials || [];
-      
-      // Update processing materials set
-      const stillProcessing = new Set<number>();
-      materials.forEach((material: any) => {
-        if (material.processing_status === 'pending' || material.processing_status === 'processing') {
-          stillProcessing.add(material.id);
-        }
-      });
-      
-      setProcessingMaterials(stillProcessing);
-      
-      // Update existing materials
-      setExistingGradingMaterials(materials);
-    }
-  } catch (error) {
-    debugLog("Error checking processing status:", error);
-  }
-};
-
-// Upload grading materials to backend
-const uploadGradingMaterials = async (simulationId: number): Promise<void> => {
-  if (uploadedFiles.length === 0) {
-    debugLog("No grading materials to upload");
-    return;
-  }
-
-  debugLog(`Uploading ${uploadedFiles.length} grading materials for simulation ${simulationId}`);
-  
-  for (const file of uploadedFiles) {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await apiClient.apiRequest(
-        `/professor/simulations/${simulationId}/grading-materials`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      );
-      
-      if (response.ok) {
-        const result = await response.json();
-        debugLog(`Successfully uploaded grading material: ${file.name} (ID: ${result.material.id})`);
-      } else {
-        console.error(`Failed to upload ${file.name}:`, await response.text());
-      }
-    } catch (error) {
-      console.error(`Error uploading ${file.name}:`, error);
-    }
-  }
-};
 
 // Save and Publish handlers
 const handleSave = async (): Promise<number | null> => {
@@ -1109,6 +750,7 @@ const handleSave = async (): Promise<number | null> => {
     rubric_performance_levels: rubricConfig.performanceLevels,
     // Add grading prompt
     grading_prompt: gradingPrompt,
+    strictness_level: strictnessLevel,
     // Add completion tracking - only mark as complete when all sections are actually done
     completion_status: {
       name_completed: !!name?.trim() || !!autofillResult,
@@ -1232,16 +874,6 @@ const handleSave = async (): Promise<number | null> => {
          }
        }
        
-       // Upload grading materials if any are pending
-       if (uploadedFiles.length > 0) {
-         debugLog("Uploading grading materials after scenario save...");
-         await uploadGradingMaterials(newScenarioId);
-         // Clear uploaded files after successful upload
-         setUploadedFiles([]);
-         // Reload existing grading materials to show the newly uploaded ones
-         await loadGradingMaterials(newScenarioId);
-       }
-       
        // Reset save status after 3 seconds to show it's temporary
        setTimeout(() => {
          setIsSaved(false);
@@ -1302,6 +934,7 @@ const handleSave = async (): Promise<number | null> => {
      (personas && personas.length > 0) ||
      (scenes && scenes.length > 0) ||
      gradingPrompt ||
+     assessmentReady ||
      autofillResult ||
      uploadedFile ||
      (uploadedFiles && uploadedFiles.length > 0) ||
@@ -1339,38 +972,9 @@ const handleSave = async (): Promise<number | null> => {
      setIsPublished(false)
      setAutofillResult(null)
      setGradingPrompt("")
-     setRubricConfig({
-       title: "Case Study Analysis",
-       performanceLevels: [
-         { name: "Outstanding", points: 25 },
-         { name: "Excellent", points: 20 },
-         { name: "Good", points: 15 },
-         { name: "Fair", points: 10 },
-         { name: "Poor", points: 5 }
-       ],
-       criteria: [
-         {
-           description: "Analysis of major issues in the case",
-           descriptions: {
-             "Outstanding": "Presents an extremely thorough and insightful analysis of all major issues in the case. Conclusions are well justified by factual and computational support.",
-             "Excellent": "Presents a strong analysis of most of the major issues in the case but has some limitations and lacks full depth in some areas. Some conclusions may lack support.",
-             "Good": "Presents a good analysis of most of the major issues in the case but lacks depth in some areas. Some conclusions may lack support.",
-             "Fair": "Presents an adequate yet limited analysis of most of the major issues in the case but lacks depth in several areas. Conclusions may lack support.",
-             "Poor": "The level of analysis lacks adequate depth and/or factual and computational support for analysis is omitted."
-           }
-         },
-         {
-           description: "Quality and feasibility of recommendations",
-           descriptions: {
-             "Outstanding": "Recommendations are detailed and insightful and together compose a thorough plan to address major challenges.",
-             "Excellent": "Recommendations are excellent to address major issues and are linked to the analysis. Almost all anticipated consequences and alternatives are included.",
-             "Good": "Recommendations are strong to address major issues and are somewhat but not fully linked to the analysis. Some anticipated consequences and alternatives are included.",
-             "Fair": "Recommendations are appropriate to address major issues and are linked to the analysis. Some anticipated consequences and alternatives are included.",
-             "Poor": "Recommendations are mostly appropriate to address issues and are at least partially linked to the analysis. Anticipated consequences and alternatives are lacking."
-           }
-         }
-       ]
-     })
+     setRubricConfig(createDefaultRubricConfig())
+     setStrictnessLevel(DEFAULT_STRICTNESS_LEVEL)
+     setAssessmentReady(false)
      setUploadedFile(null)
      setUploadedFiles([])
      setTeachingNotesFile(null)
@@ -1478,6 +1082,8 @@ const handlePublish = async () => {
    scenes,
    gradingPrompt,
    rubricConfig,
+   strictnessLevel,
+   assessmentReady,
    autofillResult,
    savedSimulationId,
    isSaved
@@ -1494,11 +1100,13 @@ const handlePublish = async () => {
      scenes,
      gradingPrompt,
      rubricConfig,
+     strictnessLevel,
+     assessmentReady,
      autofillResult,
      savedSimulationId,
      isSaved
    };
- }, [name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, autofillResult, savedSimulationId, isSaved]);
+ }, [name, description, studentRole, learningOutcomes, personas, scenes, gradingPrompt, rubricConfig, strictnessLevel, assessmentReady, autofillResult, savedSimulationId, isSaved]);
  
  const saveToLocalStorage = () => {
    try {
@@ -1547,6 +1155,7 @@ const handlePublish = async () => {
          }
          if (formData.gradingPrompt !== undefined) setGradingPrompt(formData.gradingPrompt);
          if (formData.rubricConfig) setRubricConfig(formData.rubricConfig);
+         if (formData.strictnessLevel !== undefined) setStrictnessLevel(formData.strictnessLevel);
          if (formData.autofillResult) setAutofillResult(formData.autofillResult);
          if (formData.savedSimulationId) setSavedSimulationId(formData.savedSimulationId);
          if (formData.isSaved !== undefined) setIsSaved(formData.isSaved);
@@ -2687,1088 +2296,314 @@ const handleSaveScene = (idx: number, updatedScene: any) => {
    markAsUnsaved(); // Mark as unsaved when scene is deleted
 };
 
-// Debug logging for personas
-console.log("[DEBUG] Temp personas to render:", tempPersonas.map(p => p.name));
-console.log("[DEBUG] Permanent personas to render:", personas.map(p => p.name));
-console.log("[DEBUG] Total personas count:", personas.length);
-console.log("[DEBUG] Personas details:", personas.map(p => ({ name: p.name, position: p.position })));
+const studioStepIndex = SIMULATION_STUDIO_STEPS.findIndex(step => step.id === currentStep)
+const allPersonas = [...tempPersonas, ...personas]
+const sortedScenes = scenes
+  .map((scene, originalIdx) => ({ scene, originalIdx }))
+  .sort((a, b) => (a.scene.sequence_order || 0) - (b.scene.sequence_order || 0))
+const completedSteps: Partial<Record<SimulationStudioStep, boolean>> = {
+  source: Boolean(uploadedFile || teachingNotesFile || autofillResult),
+  foundations: Boolean(name.trim() && description.trim() && studentRole.trim() && learningOutcomes.trim()),
+  people: personas.length > 0,
+  flow: scenes.length > 0,
+  assessment: assessmentReady,
+  review: Boolean(savedSimulationId),
+}
+const processing = isParsingWithProgress || autofillLoading
+const editingPersona = editingIdx === null
+  ? null
+  : editingIdx === -1
+    ? tempPersonas[0]
+    : tempPersonas[editingIdx]?.isTemp
+      ? tempPersonas[editingIdx]
+      : personas[editingIdx]
+const editingScene = editingSceneIdx === null
+  ? null
+  : editingSceneIdx === -1
+    ? {
+        id: `scene-${Date.now()}`,
+        title: "New scene",
+        description: "",
+        personas_involved: [],
+        user_goal: "",
+        sequence_order: scenes.length + 1,
+        image_url: "",
+        timeout_turns: 15,
+      }
+    : scenes[editingSceneIdx]
+
+const stepHeading = SIMULATION_STUDIO_STEPS[studioStepIndex]
 
 return (
-   <div className="min-h-screen bg-atmospheric relative pattern-dots text-foreground">
-     {/* New Sidebar Component */}
-     <RoleBasedSidebar currentPath="/professor/simulation-builder" />
-     
-     {/* Top overlay bar - positioned outside content container */}
-     <div className="fixed top-0 z-40 bg-white/90 backdrop-blur-sm shadow-lg border-b border-gray-200/60 flex items-center justify-between h-14 pl-4 pr-8 stagger-1 animate-fade-scale" style={{ left: '5rem', right: '0' }}>
-       <div className="flex items-center gap-4">
-         <Button variant="ghost" size="sm" onClick={() => router.back()}>
-           <ArrowLeft className="h-4 w-4" />
-         </Button>
-         <span className="text-lg font-semibold">New Simulation</span>
-       </div>
-       <div className="flex gap-4">
-         <Button 
-           onClick={handleClear}
-           disabled={!hasDataToClear()}
-           variant="outline"
-           className={`flex items-center gap-2 bg-white/90 backdrop-blur-sm transition-all ${
-             hasDataToClear() 
-               ? "border-red-200/60 hover:bg-red-50/90 hover:border-red-300/60 text-red-600 hover:text-red-700 cursor-pointer" 
-               : "border-gray-200/60 text-gray-400 cursor-not-allowed opacity-50"
-           }`}
-         >
-           <Trash2 className="h-4 w-4" />
-           Clear
-           {hasDataToClear() && (
-             <span className="ml-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-           )}
-         </Button>
-         <Button 
-           onClick={handleSave}
-           disabled={isSaving || uploadingFiles.size > 0 || processingMaterials.size > 0 || isParsingWithProgress}
-           variant="outline"
-           className="flex items-center gap-2 bg-white/90 backdrop-blur-sm border-gray-200/60 hover:bg-gray-50/90"
-           title={isParsingWithProgress ? "Please wait for PDF processing to complete before saving" : undefined}
-         >
-           {isSaving ? (
-             "Saving..."
-           ) : isParsingWithProgress ? (
-             "Processing PDF..."
-           ) : uploadingFiles.size > 0 ? (
-             `Uploading ${uploadingFiles.size} file${uploadingFiles.size > 1 ? 's' : ''}...`
-           ) : processingMaterials.size > 0 ? (
-             `Processing ${processingMaterials.size} file${processingMaterials.size > 1 ? 's' : ''}...`
-           ) : isSaved ? (
-             <>
-               <Check className="h-4 w-4" />
-               Saved
-             </>
-           ) : (
-             "Save Draft"
-           )}
-         </Button>
-         <Button 
-           onClick={handlePublish}
-           disabled={isPublishing || isParsingWithProgress}
-           className="btn-gradient text-white border-0 shadow-md hover:shadow-lg transition-all font-semibold flex items-center gap-2 disabled:opacity-50"
-           title={isParsingWithProgress ? "Please wait for PDF processing to complete before publishing" : undefined}
-         >
-           {isPublishing ? (
-             "Publishing..."
-           ) : isParsingWithProgress ? (
-             "Processing PDF..."
-           ) : isPublished ? (
-             <>
-               <Check className="h-4 w-4" />
-               Published
-             </>
-           ) : (
-             "Publish"
-           )}
-         </Button>
-         {savedSimulationId && (
-          <button 
-            onClick={handlePlaySimulation}
-            disabled={isPlayingSimulation || isSimulationDraft}
-             className="btn-gradient-purple text-white border-0 px-4 py-2 rounded-md shadow-md hover:shadow-lg transition-all font-semibold flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
-           >
-             {isPlayingSimulation ? (
-               <>
-                 <RefreshCw className="h-4 w-4 sim-loading-spinner" />
-                 Loading...
-               </>
-             ) : (
-               <>
-                 <Activity className="h-4 w-4" />
-                 Play Simulation
-               </>
-             )}
-           </button>
-         )}
-       </div>
-     </div>
-     
-     {/* Main content area with left margin for sidebar */}
-     <div className="ml-20 animate-page-enter">
-     {/* Add top padding to prevent content from being hidden under the bar */}
-     <div className="h-14" />
-     {/* Main content area */}
-     <div className="w-full pl-16 pr-16 py-10 flex justify-center">
-       <div className="w-full max-w-4xl">
-       {/* Tabbed Interface */}
-       <div className="w-full max-w-4xl">
-         {/* Tab Navigation */}
-         <div className="flex border-b border-gray-200 mb-6">
-           <button
-             onClick={() => setActiveTab('configuration')}
-             className={`flex items-center gap-2 px-6 py-3 font-medium text-sm transition-colors ${
-               activeTab === 'configuration'
-                 ? 'border-b-2 border-black text-black'
-                 : 'text-gray-600 hover:text-gray-900'
-             }`}
-           >
-             <Settings className="h-4 w-4" />
-             Configuration
-           </button>
-           <button
-             onClick={() => setActiveTab('grading')}
-             className={`flex items-center gap-2 px-6 py-3 font-medium text-sm transition-colors ${
-               activeTab === 'grading'
-                 ? 'border-b-2 border-black text-black'
-                 : 'text-gray-600 hover:text-gray-900'
-             }`}
-           >
-             <Target className="h-4 w-4" />
-             Grading
-           </button>
-         </div>
+  <div className="min-h-screen bg-background text-foreground">
+    <RoleBasedSidebar currentPath="/professor/simulation-builder" />
+    <main className="ml-20 min-h-screen pb-10">
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto max-w-[1440px] px-5 py-6 sm:px-8 lg:px-10">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
+              <Button variant="ghost" className="mb-3 -ml-3 w-fit" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Simulation Studio</Badge>
+                <Badge variant={isSimulationDraft ? "secondary" : "default"}>{isSimulationDraft ? "Draft" : "Published"}</Badge>
+                {savedSimulationId && <span className="text-xs text-muted-foreground">ID {savedSimulationId}</span>}
+              </div>
+              <h1 className="mt-3 break-words text-3xl font-semibold tracking-tight sm:text-4xl xl:truncate">
+                {name.trim() || "Create a simulation"}
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Build an interactive learning experience one understandable decision at a time.
+              </p>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+              <Button type="button" variant="ghost" onClick={handleClear} disabled={!hasDataToClear()} className="w-full text-muted-foreground hover:text-destructive sm:w-auto">
+                <Trash2 className="mr-2 h-4 w-4" /> Clear
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSave}
+                disabled={isSaving || processing}
+                className="w-full sm:w-auto"
+              >
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : isSaved ? <Check className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
+                {isSaving ? "Saving…" : isSaved ? "Saved" : "Save draft"}
+              </Button>
+              {savedSimulationId && (
+                <Button type="button" variant="outline" onClick={handlePlaySimulation} disabled={isPlayingSimulation || isSimulationDraft} className="w-full sm:w-auto">
+                  {isPlayingSimulation ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Play className="mr-2 h-4 w-4" />}
+                  Test
+                </Button>
+              )}
+              <Button type="button" onClick={handlePublish} disabled={isPublishing || processing} className="w-full sm:w-auto">
+                {isPublishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : isPublished ? <Check className="mr-2 h-4 w-4" /> : <Rocket className="mr-2 h-4 w-4" />}
+                {isPublishing ? "Publishing…" : isPublished ? "Published" : "Publish"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
 
-         {/* Tab Content */}
-         {activeTab === 'configuration' && (
-           <div className="space-y-6">
-             {/* Header and Upload Row */}
-             <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 items-start">
-               {/* Left: Title and Subtitle */}
-               <div className="flex flex-col gap-2">
-                 <h1 className="text-2xl font-bold">Upload your Business Case Study</h1>
-                 <p className="text-muted-foreground text-sm">We will analyze the contents and autofill the configuration for you.</p>
-               </div>
-               {/* Right: Drag and Drop File Upload Box */}
-               <div
-                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 flex flex-col items-center justify-center min-h-[120px] cursor-pointer ${
-                   isDragOver
-                     ? 'border-blue-500 bg-blue-50 scale-105'
-                     : uploadedFile
-                     ? 'border-green-500 bg-green-50'
-                     : 'border-gray-300 bg-card hover:border-gray-400'
-                 }`}
-                 onDragOver={handleDragOver}
-                 onDragLeave={handleDragLeave}
-                 onDrop={handleDrop}
-                 onClick={() => fileInputRef.current?.click()}
-               >
-                 {uploadedFile ? (
-                   <span className="flex flex-col items-center">
-                     {/* Red file icon */}
-                     <svg className="h-10 w-10 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                       <polyline points="14,2 14,8 20,8" />
-                       <line x1="16" y1="13" x2="8" y2="13" />
-                       <line x1="16" y1="17" x2="8" y2="17" />
-                       <polyline points="10,9 9,9 8,9" />
-                     </svg>
-                     <span className="text-sm font-semibold text-green-700">File attached</span>
-                     <span className="text-xs text-green-600 mt-1">{uploadedFile.name}</span>
-                   </span>
-                 ) : (
-                   <>
-                     {/* Generic file icon - three overlapping documents */}
-                     <svg className="h-10 w-10 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                       <polyline points="14,2 14,8 20,8" />
-                       <line x1="16" y1="13" x2="8" y2="13" />
-                       <line x1="16" y1="17" x2="8" y2="17" />
-                       <polyline points="10,9 9,9 8,9" />
-                     </svg>
-                     
-                     <span className="font-medium text-gray-600">
-                       <span className="font-bold text-black">Click here</span> to upload your file or drag and drop
-                     </span>
-                   </>
-                 )}
-                
-                 <input
-                   id="file-upload"
-                   type="file"
-                   className="hidden"
-                   onChange={handleFileChange}
-                   ref={fileInputRef}
-                 />
-               </div>
-             </div>
+      <div className="mx-auto max-w-[1440px] px-5 py-7 sm:px-8 lg:px-10">
+        <MobileStudioProgress currentStep={currentStep} onStepChange={handleStepChange} headingId="studio-step-title-mobile" />
+        <div className="mt-6 grid gap-8 lg:grid-cols-[18rem_minmax(0,1fr)]">
+          <StudioStepRail currentStep={currentStep} onStepChange={handleStepChange} completedSteps={completedSteps} />
 
-             {/* Teaching Notes Upload Section */}
-             <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 items-start">
-               {/* Left: Title and Subtitle */}
-               <div className="flex flex-col gap-2">
-                 <h1 className="text-2xl font-bold">Upload your Teaching Notes</h1>
-                 <p className="text-muted-foreground text-sm">We will use this for defining better learning outcomes and concise grading metrics.</p>
-               </div>
-               {/* Right: Drag and Drop File Upload Box */}
-               <div
-                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 flex flex-col items-center justify-center min-h-[120px] cursor-pointer ${
-                   teachingNotesFile
-                     ? 'border-green-500 bg-green-50'
-                     : 'border-gray-300 bg-card hover:border-gray-400'
-                 }`}
-                 onDragOver={handleTeachingNotesDragOver}
-                 onDragLeave={handleTeachingNotesDragLeave}
-                 onDrop={handleTeachingNotesDrop}
-                 onClick={() => teachingNotesInputRef.current?.click()}
-               >
-                 {teachingNotesFile ? (
-                   <span className="flex flex-col items-center">
-                     {/* Red file icon */}
-                     <svg className="h-10 w-10 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                       <polyline points="14,2 14,8 20,8" />
-                       <line x1="16" y1="13" x2="8" y2="13" />
-                       <line x1="16" y1="17" x2="8" y2="17" />
-                       <polyline points="10,9 9,9 8,9" />
-                     </svg>
-                     <span className="text-sm font-semibold text-green-700">File attached</span>
-                     <span className="text-xs text-green-600 mt-1">{teachingNotesFile.name}</span>
-                   </span>
-                 ) : (
-                   <>
-                     {/* Generic file icon - three overlapping documents */}
-                     <svg className="h-10 w-10 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                       <polyline points="14,2 14,8 20,8" />
-                       <line x1="16" y1="13" x2="8" y2="13" />
-                       <line x1="16" y1="17" x2="8" y2="17" />
-                       <polyline points="10,9 9,9 8,9" />
-                     </svg>
-                     
-                     <span className="font-medium text-gray-600">
-                       <span className="font-bold text-black">Click here</span> to upload your file or drag and drop
-                     </span>
-                   </>
-                 )}
-                
-                 <input
-                   id="teaching-notes-upload"
-                   type="file"
-                   className="hidden"
-                   onChange={handleTeachingNotesFileChange}
-                   ref={teachingNotesInputRef}
-                 />
-               </div>
-             </div>
+          <section aria-labelledby="studio-step-title-mobile" className="min-w-0">
+            <div className="mb-7 hidden lg:block">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Step {studioStepIndex + 1} of {SIMULATION_STUDIO_STEPS.length}</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{stepHeading.label}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{stepHeading.description}</p>
+            </div>
 
-            {/* Show action buttons if files are uploaded */}
-            {(uploadedFile || teachingNotesFile) && (
-              <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                <div></div>
-                <div className="flex gap-4 justify-end">
-                  {/* Choose a different file */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Clear both files
-                      setUploadedFile(null);
-                      setTeachingNotesFile(null);
-                      if (fileInputRef.current) fileInputRef.current.value = "";
-                      if (teachingNotesInputRef.current) teachingNotesInputRef.current.value = "";
+            {currentStep === "source" && (
+              <div className="space-y-6">
+                <Card className="overflow-hidden border-border bg-card shadow-sm">
+                  <CardHeader className="border-b border-border bg-surface-subtle">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Sparkles className="h-5 w-5" /></div>
+                      <div>
+                        <CardTitle>Start with your teaching materials</CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">Documents are optional. Add them to generate a first draft, or continue to Foundations to build manually.</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 p-5 md:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`group min-h-48 rounded-2xl border border-dashed p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${isDragOver ? "border-primary bg-primary/10" : "border-border bg-surface-subtle hover:border-primary/60"}`}
+                    >
+                      <div className="flex h-full flex-col justify-between gap-6">
+                        <div className="flex items-start justify-between gap-3"><FileText className="h-7 w-7 text-primary" />{uploadedFile && <Badge>Attached</Badge>}</div>
+                        <div>
+                          <p className="font-semibold">Case study</p>
+                          <p className="mt-1 break-all text-sm text-muted-foreground">{uploadedFile?.name || "Upload the source case your learners will explore."}</p>
+                        </div>
+                      </div>
+                    </button>
+                    <input id="case-study-upload" ref={fileInputRef} type="file" className="sr-only" onChange={handleFileChange} />
+
+                    <button
+                      type="button"
+                      onClick={() => teachingNotesInputRef.current?.click()}
+                      onDragOver={handleTeachingNotesDragOver}
+                      onDragLeave={handleTeachingNotesDragLeave}
+                      onDrop={handleTeachingNotesDrop}
+                      className="group min-h-48 rounded-2xl border border-dashed border-border bg-surface-subtle p-5 text-left transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    >
+                      <div className="flex h-full flex-col justify-between gap-6">
+                        <div className="flex items-start justify-between gap-3"><BookOpen className="h-7 w-7 text-primary" />{teachingNotesFile && <Badge>Attached</Badge>}</div>
+                        <div>
+                          <p className="font-semibold">Teaching notes</p>
+                          <p className="mt-1 break-all text-sm text-muted-foreground">{teachingNotesFile?.name || "Optional guidance for outcomes and assessment."}</p>
+                        </div>
+                      </div>
+                    </button>
+                    <input id="teaching-notes-upload" ref={teachingNotesInputRef} type="file" className="sr-only" onChange={handleTeachingNotesFileChange} />
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border bg-card shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base">Additional reference files</CardTitle>
+                    <p className="text-sm text-muted-foreground">Optional context used while generating the simulation. These are source references, not grading materials.</p>
+                  </CardHeader>
+                  <CardContent>
+                    <Button type="button" variant="outline" onClick={handleUploadFilesClick}><FileUp className="mr-2 h-4 w-4" /> Add references</Button>
+                    <input ref={filesInputRef} type="file" multiple className="sr-only" onChange={handleFilesChange} />
+                    {uploadedFiles.length > 0 ? (
+                      <ul className="mt-4 space-y-2">
+                        {uploadedFiles.map((file, index) => (
+                          <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-subtle px-4 py-3 text-sm">
+                            <span className="min-w-0 truncate">{file.name}</span>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveFile(index)} aria-label={`Remove ${file.name}`} className="h-8 w-8 shrink-0 text-destructive"><X className="h-4 w-4" /></Button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p className="mt-4 text-sm text-muted-foreground">No additional references added.</p>}
+                  </CardContent>
+                </Card>
+
+                {(uploadedFile || teachingNotesFile) && (
+                  <div className="flex flex-col gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div><p className="font-semibold">Ready to create a first draft</p><p className="mt-1 text-sm text-muted-foreground">You can review and change every generated field afterward.</p></div>
+                    <Button
+                      type="button"
+                      onClick={() => uploadedFile ? handleAutofillWithProgress() : handleAutofillWithTeachingNotes()}
+                      disabled={processing}
+                    >
+                      {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      {processing ? "Generating…" : "Generate first draft"}
+                    </Button>
+                  </div>
+                )}
+
+                {(isParsingWithProgress || sessionId) && (
+                  <PDFProgressTrackerHTTP
+                    sessionId={sessionId || ""}
+                    onComplete={(result) => {
+                      setAutofillResult((previous: any) => result ?? previous ?? { completed: true })
+                      setAutofillStep("Complete!")
+                      resetParsing()
                     }}
-                    className="bg-white text-black border border-gray-300 rounded px-4 py-2 font-medium shadow hover:bg-gray-50 transition h-10"
-                  >
-                    Choose a different file
-                  </button>
-                  {/* Use and autofill */}
-                  <button
-                    className="bg-black text-white rounded px-4 py-2 font-medium shadow hover:bg-gray-800 transition border border-black h-10 flex items-center gap-2"
-                    onClick={() => {
-                      // Use the new progress tracking for Business Case Study
-                      if (uploadedFile) {
-                        handleAutofillWithProgress();
-                      } else if (teachingNotesFile) {
-                        handleAutofillWithTeachingNotes();
-                      } else {
-                        console.log("No files uploaded for autofill");
-                      }
-                    }}
-                    disabled={isParsingWithProgress || autofillLoading}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Use and autofill
-                  </button>
-                </div>
+                    onError={(error) => { setAutofillError(error); resetParsing() }}
+                    onFieldUpdate={handleFieldUpdate}
+                    onSimulationId={(simulationId) => { if (!savedSimulationId) setSavedSimulationId(simulationId) }}
+                  />
+                )}
+                {autofillLoading && !isParsingWithProgress && (
+                  <Card className="border-primary/20 bg-primary/5"><CardContent className="space-y-2 p-5"><div className="flex justify-between text-sm"><span>{autofillStep || "Generating first draft…"}</span><span>{Math.round(autofillProgress)}%</span></div><Progress value={autofillProgress} /></CardContent></Card>
+                )}
+                {autofillError && <Alert variant="destructive"><AlertTitle>Generation stopped</AlertTitle><AlertDescription>{autofillError}</AlertDescription></Alert>}
+                {autofillResult && autofillStep === "Complete!" && <Alert><CircleCheck className="h-4 w-4" /><AlertTitle>First draft generated</AlertTitle><AlertDescription>Review each step and make the experience your own.</AlertDescription></Alert>}
               </div>
             )}
 
-             {/* Show simulation builder progress */}
-             <SimulationBuilderProgress
-               name={name}
-               description={description}
-               studentRole={studentRole}
-               personas={personas}
-               scenes={scenes}
-               learningOutcomes={learningOutcomes}
-               isProcessing={isParsingWithProgress}
-               completionStatus={completionStatus || undefined}
-               hasAutofillResult={!!autofillResult}
-               nameCompleted={dbCompletionFields.nameCompleted}
-               descriptionCompleted={dbCompletionFields.descriptionCompleted}
-               studentRoleCompleted={dbCompletionFields.studentRoleCompleted}
-               personasCompleted={dbCompletionFields.personasCompleted}
-               scenesCompleted={dbCompletionFields.scenesCompleted}
-               imagesCompleted={dbCompletionFields.imagesCompleted}
-               learningOutcomesCompleted={dbCompletionFields.learningOutcomesCompleted}
-               className="mt-4"
-             />
+            {currentStep === "foundations" && (
+              <Card className="border-border bg-card shadow-sm">
+                <CardHeader><CardTitle>Set the learner&apos;s context</CardTitle><p className="text-sm text-muted-foreground">Explain the situation in language that will make sense when the learner enters the simulation.</p></CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-2"><Label htmlFor="simulation-title">Simulation title</Label><Input id="simulation-title" value={name} onChange={(event) => { setName(event.target.value); markAsUnsaved() }} disabled={processing} placeholder="A clear, memorable title" /></div>
+                  <div className="space-y-2"><Label htmlFor="simulation-background">Background and situation</Label><Textarea id="simulation-background" value={description} onChange={(event) => { setDescription(event.target.value); markAsUnsaved() }} disabled={processing} placeholder="What is happening, why it matters, and what tension the learner is entering" className="min-h-44 resize-y" /></div>
+                  <div className="space-y-2"><Label htmlFor="learner-role">Learner role</Label><Input id="learner-role" value={studentRole} onChange={(event) => { setStudentRole(event.target.value); markAsUnsaved() }} disabled={processing} placeholder="For example: Strategy lead advising the executive team" /><p className="text-xs text-muted-foreground">Describe who the learner is in the story, not their technical permissions.</p></div>
+                  <div className="space-y-2"><Label htmlFor="learning-outcomes">Learning outcomes</Label><Textarea id="learning-outcomes" value={learningOutcomes} onChange={(event) => { setLearningOutcomes(event.target.value); markAsUnsaved() }} disabled={processing} placeholder={"One outcome per line\nEvaluate competing strategic priorities\nDefend a decision with evidence"} className="min-h-44 resize-y" /><p className="text-xs text-muted-foreground">Use observable outcomes that you could recognize in a learner&apos;s decisions.</p></div>
+                </CardContent>
+              </Card>
+            )}
 
-             {/* Show legacy loading progress for Teaching Notes */}
-             {autofillLoading && !isParsingWithProgress && (
-               <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                 <div className="flex items-center justify-between mb-2">
-                   <span className="text-sm font-medium text-blue-800">{autofillStep}</span>
-                   <span className="text-xs text-blue-600">{Math.round(autofillProgress)}%</span>
-                 </div>
-                 <Progress value={autofillProgress} className="w-full h-2" />
-               </div>
-             )}
-             
-             {/* Show error */}
-             {autofillError && (
-               <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
-                 <div className="flex items-center">
-                   <span className="text-red-600 font-medium">Error:</span>
-                   <span className="text-red-600 ml-2">{autofillError}</span>
-                 </div>
-               </div>
-             )}
-            
-             {/* Show success message */}
-             {autofillResult && autofillStep === "Complete!" && (
-               <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                 <div className="flex items-center">
-                   <span className="text-green-600 font-medium">✓ Success!</span>
-                   <span className="text-green-600 ml-2">PDF content has been mapped to your form fields.</span>
-                 </div>
-               </div>
-             )}
-
-             {/* Hidden PDF progress tracker for field updates */}
-             {(isParsingWithProgress || sessionId) && (
-               <div style={{ display: 'none' }}>
-                 <PDFProgressTrackerHTTP
-                   sessionId={sessionId || ''}
-                   onComplete={(result) => {
-                     console.log('PDF parsing completed:', result);
-                     // Reset the loading state when processing is complete
-                     resetParsing();
-                   }}
-                   onError={(error) => {
-                     console.error('PDF parsing error:', error);
-                     setAutofillError(error);
-                     // Reset the loading state on error
-                     resetParsing();
-                   }}
-                   onFieldUpdate={(fieldName, fieldValue) => {
-                     console.log('Field update received:', fieldName, fieldValue);
-                     handleFieldUpdate(fieldName, fieldValue);
-                   }}
-                   onSimulationId={(simulationId: number) => {
-                     console.log('Simulation ID received from backend:', simulationId);
-                     // Set the simulation ID so auto-save uses the correct one
-                     if (!savedSimulationId) {
-                       setSavedSimulationId(simulationId);
-                     }
-                   }}
-                 />
-               </div>
-             )}
-
-             {/* Configuration content */}
-             <Accordion type="multiple" className="space-y-6" defaultValue={['info', 'personas', 'timeline']}>
-           {/* Information Accordion */}
-           <AccordionItem value="info">
-             <AccordionTrigger className="flex items-center gap-2 text-lg font-semibold justify-start text-left">
-               <Info className="h-5 w-5" />
-               Information
-               <span className="ml-2 text-muted-foreground text-sm font-normal">The overall description of the simulation. This is the foundation and sense of direction.</span>
-             </AccordionTrigger>
-             <AccordionContent className="overflow-visible" style={{ overflow: 'visible' }}>
-               <div className="space-y-5 pt-4 w-full mx-auto overflow-visible">
-                 <div className="overflow-visible focus-within:overflow-visible">
-                   <Label htmlFor="name">Name</Label>
-                   <Input 
-                     id="name" 
-                     value={name} 
-                     onChange={e => {
-                       setName(e.target.value);
-                       markAsUnsaved();
-                     }} 
-                     disabled={autofillLoading || isParsingWithProgress}
-                     className="mt-1 w-full box-border p-2" 
-                   />
-                 </div>
-                 <div className="overflow-visible focus-within:overflow-visible rounded-none">
-                   <Label htmlFor="description">Description/Background</Label>
-                   <Textarea
-                     id="description"
-                     value={description}
-                     onChange={e => {
-                       setDescription(e.target.value);
-                       markAsUnsaved();
-                     }}
-                     disabled={autofillLoading || isParsingWithProgress}
-                     className="mt-1 w-full overflow-visible rounded-none z-10 p-2 min-h-[200px] resize-y whitespace-pre-wrap"
-                     style={{ minHeight: '200px', maxHeight: '400px' }}
-                   />
-                 </div>
-                 <div className="overflow-visible focus-within:overflow-visible">
-                   <Label htmlFor="studentRole">Student Role</Label>
-                   <Input 
-                     id="studentRole" 
-                     value={studentRole} 
-                     onChange={e => {
-                       setStudentRole(e.target.value);
-                       markAsUnsaved();
-                     }} 
-                     disabled={autofillLoading || isParsingWithProgress}
-                     placeholder="e.g., John Smith (CEO of Company Name), Business Analyst, Strategic Advisor"
-                     className="mt-1 w-full box-border p-2" 
-                   />
-                   <p className="text-sm text-muted-foreground mt-1">
-                     The role the student will assume in this simulation. This could be a specific character from the case study or a business position.
-                   </p>
-                 </div>
-                 <div className="overflow-visible focus-within:overflow-visible">
-                   <Label htmlFor="learning-outcomes">Learning Outcomes</Label>
-                   <Textarea
-                     id="learning-outcomes"
-                     value={learningOutcomes}
-                     onChange={e => {
-                       setLearningOutcomes(e.target.value);
-                       markAsUnsaved();
-                     }}
-                     disabled={autofillLoading || isParsingWithProgress}
-                     className="mt-1 w-full box-border p-2 min-h-[200px] resize-y whitespace-pre-wrap"
-                     style={{ minHeight: '200px', maxHeight: '400px' }}
-                   />
-                 </div>
-                           <div>
-                   <Label className="block mb-1">Files</Label>
-                   <span className="block text-muted-foreground text-xs mb-2">Use this to give more context to the simulation</span>
-                   <Button variant="outline" onClick={handleUploadFilesClick}>Upload Files</Button>
-                   <input
-                     type="file"
-                     multiple
-                     className="hidden"
-                     ref={filesInputRef}
-                     onChange={handleFilesChange}
-                   />
-                   {uploadedFiles.length > 0 && (
-                     <ul className="mt-2 text-xs text-muted-foreground">
-                       {uploadedFiles.map((file, idx) => (
-                         <li key={idx} className="flex items-center gap-2">
-                           {file.name}
-                           <button
-                             type="button"
-                             className="ml-1 text-red-500 hover:text-red-700"
-                             onClick={() => handleRemoveFile(idx)}
-                             aria-label={`Remove ${file.name}`}
-                           >
-                             <X className="w-3 h-3" />
-                           </button>
-                         </li>
-                       ))}
-                     </ul>
-                   )}
-                 </div>
-               </div>
-             </AccordionContent>
-           </AccordionItem>
-
-
-           {/* Personas Accordion */}
-           <AccordionItem value="personas">
-             <AccordionTrigger className="flex items-center gap-2 text-lg font-semibold justify-start text-left">
-               <Users className="h-5 w-5" />
-               Personas
-               <span className="ml-2 text-muted-foreground text-sm font-normal">The characters the user will interact during the simulation with their own personality and goals.</span>
-             </AccordionTrigger>
-             <AccordionContent>
-               <div className="flex flex-col items-center py-6">
-                 <Button 
-                   onClick={handleAddPersona} 
-                   variant="outline" 
-                   className="w-60"
-                   disabled={autofillLoading || isParsingWithProgress}
-                 >
-                   Add new persona
-                 </Button>
-                 {/* Render persona cards here, excluding the player character */}
-                 {(tempPersonas.length > 0 || personas.length > 0) && (
-                   <div className="w-full flex flex-col items-center mt-6">
-                     {/* Render temporary personas first (at the top) */}
-                     {tempPersonas.map((persona: any, idx: number) => (
-                       <div key={`temp-${idx}`} className="relative w-full">
-                         <div 
-                           onClick={() => !(autofillLoading || isParsingWithProgress) && setEditingIdx(idx)} 
-                           style={{ 
-                             cursor: (autofillLoading || isParsingWithProgress) ? 'not-allowed' : 'pointer',
-                             opacity: (autofillLoading || isParsingWithProgress) ? 0.6 : 1,
-                             pointerEvents: (autofillLoading || isParsingWithProgress) ? 'none' : 'auto'
-                           }}
-                         >
-                           <PersonaCard
-                             persona={{ ...persona, traits: persona.traits }}
-                             defaultTraits={persona.defaultTraits}
-                             onTraitsChange={newTraits => handleTraitsChange(idx, newTraits)}
-                             onSave={updatedPersona => handleSavePersona(idx, updatedPersona)}
-                             onDelete={() => handleDeletePersona(idx)}
-                             editMode={false}
-                           />
-                         </div>
-                       </div>
-                     ))}
-                     {/* Render permanent personas */}
-                     {personas.map((persona: any, idx: number) => (
-                       <div key={`perm-${idx}`} className="relative w-full">
-                         <div 
-                           onClick={() => !(autofillLoading || isParsingWithProgress) && setEditingIdx(idx)} 
-                           style={{ 
-                             cursor: (autofillLoading || isParsingWithProgress) ? 'not-allowed' : 'pointer',
-                             opacity: (autofillLoading || isParsingWithProgress) ? 0.6 : 1,
-                             pointerEvents: (autofillLoading || isParsingWithProgress) ? 'none' : 'auto'
-                           }}
-                         >
-                           <PersonaCard
-                             persona={{ ...persona, traits: persona.traits }}
-                             defaultTraits={persona.defaultTraits}
-                             onTraitsChange={newTraits => handleTraitsChange(idx, newTraits)}
-                             onSave={updatedPersona => handleSavePersona(idx, updatedPersona)}
-                             onDelete={() => handleDeletePersona(idx)}
-                             editMode={false}
-                           />
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
-               </div>
-             </AccordionContent>
-           </AccordionItem>
-
-
-           {/* Timeline Accordion */}
-           <AccordionItem value="timeline">
-             <AccordionTrigger className="flex items-center gap-2 text-lg font-semibold justify-start text-left">
-               <Activity className="h-5 w-5" />
-               Timeline
-               <span className="ml-2 text-muted-foreground text-sm font-normal">These are the sequence of events the user needs to solve for during the simulation.</span>
-             </AccordionTrigger>
-             <AccordionContent>
-               <div className="py-4">
-                 <p className="text-muted-foreground text-sm mb-6">Think of each segment as a self-contained mini-level in your simulation. Arrange them from top to bottom, this will be the sequence each scene will take place in.</p>
-                 <div className="flex flex-col items-center">
-                   <Button 
-                     onClick={handleAddScene} 
-                     variant="outline" 
-                     className="w-60"
-                     disabled={autofillLoading || isParsingWithProgress}
-                   >
-                     Add new Scene
-                   </Button>
-                   
-                   {/* Render scene cards */}
-                   {scenes.length > 0 && (
-                     <div className="w-full flex flex-col items-center mt-6">
-                       {(() => {
-                         // Create a sorted array with original indices preserved
-                         const sortedScenesWithIndices = scenes
-                           .map((scene, originalIdx) => ({ scene, originalIdx }))
-                           .sort((a, b) => a.scene.sequence_order - b.scene.sequence_order);
-                         
-                         return sortedScenesWithIndices.map(({ scene, originalIdx }, sortedIdx) => {
-                           // Use a combination of id and index as key to ensure uniqueness
-                           const uniqueKey = scene.id ? `scene-${scene.id}` : `scene-temp-${sortedIdx}`;
-                          return (
-                            <div key={uniqueKey} className="relative w-full">
-                              <div 
-                                onClick={() => !(autofillLoading || isParsingWithProgress) && setEditingSceneIdx(originalIdx)} 
-                                style={{ 
-                                  cursor: (autofillLoading || isParsingWithProgress) ? 'not-allowed' : 'pointer',
-                                  opacity: (autofillLoading || isParsingWithProgress) ? 0.6 : 1,
-                                  pointerEvents: (autofillLoading || isParsingWithProgress) ? 'none' : 'auto'
-                                }}
-                              >
-                                <SceneCard
-                                   scene={scene}
-                                   onSave={updatedScene => handleSaveScene(originalIdx, updatedScene)}
-                                   onDelete={() => handleDeleteScene(originalIdx)}
-                                   editMode={false}
-                                   allPersonas={personas}
-                                   studentRole={autofillResult?.student_role || ""}
-                                 />
-                               </div>
-                             </div>
-                           );
-                         });
-                       })()}
-                     </div>
-                   )}
-                 </div>
-               </div>
-             </AccordionContent>
-           </AccordionItem>
-
-         </Accordion>
-           </div>
-         )}
-
-        {activeTab === 'grading' && (
-          <div className="space-y-6">
-            {/* Grading Materials Section */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-medium">Grading Materials</h3>
-                  <p className="text-sm text-muted-foreground">Upload additional documents for grading reference</p>
+            {currentStep === "people" && (
+              <div className="space-y-5">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                  <div><h3 className="text-xl font-semibold">People in the story</h3><p className="mt-1 text-sm text-muted-foreground">Give each person a clear perspective, goal, and way of communicating.</p></div>
+                  <Button type="button" onClick={handleAddPersona} disabled={processing}><Plus className="mr-2 h-4 w-4" /> Add person</Button>
                 </div>
-                <Button 
-                  variant="outline" 
-                  className="flex items-center gap-2"
-                  onClick={() => filesInputRef.current?.click()}
-                >
-                  <Upload className="h-4 w-4" />
-                  Upload Files
-                </Button>
-                <input
-                  ref={filesInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.txt"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files || []);
-                    if (files.length > 0 && savedSimulationId) {
-                      // Upload files immediately
-                      for (const file of files) {
-                        await uploadFileImmediately(file, savedSimulationId);
-                      }
-                      // Clear the input
-                      e.target.value = '';
-                    } else if (files.length > 0) {
-                      // If no saved simulation yet, add to pending files
-                      setUploadedFiles(prev => [...prev, ...files]);
-                      markAsUnsaved();
-                    }
-                  }}
-                />
-              </div>
-              
-              {/* Existing Grading Materials */}
-              {existingGradingMaterials.length > 0 && (
-                <div className="space-y-2 mb-4">
-                  <h4 className="text-sm font-medium text-green-700">Uploaded Materials:</h4>
-                  {existingGradingMaterials.map((material, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-green-50">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 bg-green-100 rounded flex items-center justify-center">
-                          <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14,2 14,8 20,8" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{material.filename}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {material.file_size ? `${(material.file_size / 1024).toFixed(1)} KB` : 'Unknown size'} • 
-                            Status: <span className={
-                              material.processing_status === 'completed' ? 'text-green-600' : 
-                              material.processing_status === 'processing' ? 'text-blue-600' :
-                              material.processing_status === 'pending' ? 'text-yellow-600' :
-                              'text-red-600'
-                            }>
-                              {material.processing_status === 'processing' ? 'Processing...' : material.processing_status}
-                            </span>
-                            {material.chunk_count ? ` • ${material.chunk_count} chunks` : ''}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {material.processing_status === 'completed' ? (
-                          <div className="text-green-600">
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                {allPersonas.length === 0 ? (
+                  <Card className="border-dashed border-border bg-card"><CardContent className="flex flex-col items-center px-6 py-12 text-center"><div className="rounded-full bg-surface-muted p-4"><Users className="h-6 w-6 text-muted-foreground" /></div><h4 className="mt-4 font-semibold">No people added yet</h4><p className="mt-2 max-w-md text-sm text-muted-foreground">Add the characters the learner will meet. The learner&apos;s own role stays in Foundations.</p><Button className="mt-5" onClick={handleAddPersona}><Plus className="mr-2 h-4 w-4" /> Add the first person</Button></CardContent></Card>
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {allPersonas.map((persona, index) => {
+                      const permanentIndex = tempPersonas.includes(persona) ? index : personas.indexOf(persona)
+                      return (
+                        <button key={persona.id || `${persona.name}-${index}`} type="button" onClick={() => !processing && setEditingIdx(permanentIndex)} disabled={processing} className="group rounded-2xl border border-border bg-card p-5 text-left shadow-sm transition hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60">
+                          <div className="flex gap-4">
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface-muted">{persona.imageUrl ? <img src={persona.imageUrl} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-6 w-6 text-muted-foreground" />}</div>
+                            <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-foreground">{persona.name || "Unnamed person"}</h4><p className="text-sm text-primary">{persona.position || "Role not set"}</p></div><span className="text-xs text-muted-foreground group-hover:text-foreground">Edit</span></div><p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{persona.description || persona.currentContext || "Add background and context for this person."}</p>{persona.communicationStyle && <p className="mt-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">Communication:</span> {persona.communicationStyle}</p>}</div>
                           </div>
-                        ) : material.processing_status === 'processing' ? (
-                          <div className="text-blue-600 animate-spin">
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          </div>
-                        ) : (
-                          <div className="text-yellow-600">
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                        )}
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-gray-500 hover:text-red-600"
-                          onClick={() => deleteGradingMaterial(material.id)}
-                          disabled={material.processing_status === 'processing'}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Pending Upload Files */}
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-2 mb-4">
-                  <h4 className="text-sm font-medium text-blue-700">Pending Upload:</h4>
-                  {uploadedFiles.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-blue-50">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 bg-blue-100 rounded flex items-center justify-center">
-                          <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14,2 14,8 20,8" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{file.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {(file.size / 1024).toFixed(0)} KB • Will be uploaded when saved
-                          </p>
-                        </div>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-gray-500 hover:text-red-600"
-                        onClick={() => {
-                          setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-                          markAsUnsaved();
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Empty State */}
-              {uploadedFiles.length === 0 && existingGradingMaterials.length === 0 && (
-                <div className="text-center p-8 border-2 border-dashed rounded-lg border-gray-300">
-                  <p className="text-sm text-muted-foreground">No grading materials uploaded yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Upload PDFs, documents, or text files for grading reference</p>
-                </div>
-              )}
-            </div>
-
-            {/* Grading Prompt Section */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                <h3 className="text-lg font-medium">Grading Prompt</h3>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-muted-foreground">Enter instructions for the grading agent to customize how students are evaluated.</p>
-              
-              <div className="space-y-2">
-                <Label htmlFor="grading-prompt">Grading Instructions</Label>
-                <Textarea
-                  id="grading-prompt"
-                  value={gradingPrompt}
-                  onChange={(e) => {
-                    setGradingPrompt(e.target.value);
-                    markAsUnsaved();
-                  }}
-                  placeholder="Enter instructions for the grading agent (e.g., 'Grade students based on their understanding of key concepts, application of theories, and quality of analysis...')"
-                  className="min-h-[120px] resize-y"
-                />
+            )}
+
+            {currentStep === "flow" && (
+              <div className="space-y-5">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                  <div><h3 className="text-xl font-semibold">Interaction timeline</h3><p className="mt-1 text-sm text-muted-foreground">Scenes run from top to bottom. Each one is a focused moment in the learner&apos;s journey.</p></div>
+                  <Button type="button" onClick={handleAddScene} disabled={processing}><Plus className="mr-2 h-4 w-4" /> Add scene</Button>
+                </div>
+                {sortedScenes.length === 0 ? (
+                  <Card className="border-dashed border-border bg-card"><CardContent className="flex flex-col items-center px-6 py-12 text-center"><div className="rounded-full bg-surface-muted p-4"><ListOrdered className="h-6 w-6 text-muted-foreground" /></div><h4 className="mt-4 font-semibold">No scenes in the timeline</h4><p className="mt-2 max-w-md text-sm text-muted-foreground">Start with the first decision or conversation the learner should encounter.</p><Button className="mt-5" onClick={handleAddScene}><Plus className="mr-2 h-4 w-4" /> Add the first scene</Button></CardContent></Card>
+                ) : (
+                  <ol className="space-y-4">
+                    {sortedScenes.map(({ scene, originalIdx }, index) => (
+                      <li key={scene.id || `${scene.title}-${index}`} className="relative pl-10 before:absolute before:bottom-[-1rem] before:left-[0.95rem] before:top-9 before:w-px before:bg-border last:before:hidden">
+                        <span className="absolute left-0 top-5 flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
+                        <button type="button" onClick={() => !processing && setEditingSceneIdx(originalIdx)} disabled={processing} className="group w-full overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60">
+                          <div className="grid sm:grid-cols-[9rem_1fr]">
+                            <div className="flex min-h-32 items-center justify-center bg-surface-muted">{scene.image_url ? <img src={getImageUrl(scene.image_url)} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-7 w-7 text-muted-foreground" />}</div>
+                            <div className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><Badge variant="outline">{scene.scene_type === "code_challenge" ? "Code challenge" : "Conversation"}</Badge>{scene.personas_involved?.length > 0 && <span className="text-xs text-muted-foreground">{scene.personas_involved.length} {scene.personas_involved.length === 1 ? "person" : "people"}</span>}</div><span className="text-xs text-muted-foreground group-hover:text-foreground">Edit</span></div><h4 className="mt-3 text-lg font-semibold">{scene.title || "Untitled scene"}</h4><p className="mt-1 text-sm font-medium text-primary">{scene.user_goal || "Learner goal not set"}</p><p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{scene.description || "Add what happens in this scene."}</p></div>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </div>
-            </div>
+            )}
 
-             {/* Rubric Configuration */}
-             <div className="space-y-6">
-               <div className="flex items-center gap-2">
-                 <Target className="h-5 w-5" />
-                 <h3 className="text-lg font-medium">Rubric Configuration</h3>
-               </div>
-               <p className="text-sm text-muted-foreground">Configure the rubric criteria and performance levels with point values.</p>
-               
-               {/* Rubric Title */}
-               <div className="space-y-2">
-                 <Label htmlFor="rubric-title">Rubric Title</Label>
-                 <Input
-                   id="rubric-title"
-                   value={rubricConfig.title}
-                   onChange={(e) => {
-                     setRubricConfig(prev => ({
-                       ...prev,
-                       title: e.target.value
-                     }));
-                     markAsUnsaved();
-                   }}
-                   placeholder="e.g., Case Study Analysis, Business Strategy Evaluation"
-                 />
-               </div>
-               
-               {/* Performance Levels Header */}
-               <div className="space-y-4">
-                 <div className="flex items-center justify-between">
-                   <h4 className="text-lg font-medium">Performance Levels</h4>
-                   <Button
-                     type="button"
-                     variant="outline"
-                     size="sm"
-                     onClick={() => {
-                       const newLevel = {
-                         name: `Level ${rubricConfig.performanceLevels.length + 1}`,
-                         points: 0
-                       };
-                       const newLevels = [...rubricConfig.performanceLevels, newLevel];
-                       
-                       setRubricConfig(prev => ({
-                         ...prev,
-                         performanceLevels: newLevels
-                       }));
-                       markAsUnsaved();
-                     }}
-                     className="flex items-center gap-2"
-                   >
-                     <Plus className="h-4 w-4" />
-                     Add Column
-                   </Button>
-                 </div>
-                 
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                   {rubricConfig.performanceLevels.map((level, index) => (
-                     <div key={index} className="space-y-2 relative">
-                             {rubricConfig.performanceLevels.length > 1 && (
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   const newLevels = rubricConfig.performanceLevels.filter((_, i) => i !== index);
-                                   setRubricConfig(prev => ({
-                                     ...prev,
-                                     performanceLevels: newLevels
-                                   }));
-                                   markAsUnsaved();
-                                 }}
-                                 className="absolute -top-2 -right-2 h-6 w-6 p-0 text-gray-500 hover:text-red-500 transition-colors"
-                               >
-                                 <X className="h-4 w-4" />
-                               </button>
-                             )}
-                       <Label htmlFor={`level-name-${index}`}>Level Name</Label>
-                       <Input
-                         id={`level-name-${index}`}
-                         value={level.name}
-                         onChange={(e) => {
-                           const newLevels = [...rubricConfig.performanceLevels];
-                           newLevels[index].name = e.target.value;
-                           setRubricConfig(prev => ({
-                             ...prev,
-                             performanceLevels: newLevels
-                           }));
-                           markAsUnsaved();
-                         }}
-                         placeholder="e.g., Outstanding"
-                       />
-                       <Label htmlFor={`level-points-${index}`}>Points</Label>
-                       <Input
-                         id={`level-points-${index}`}
-                         type="number"
-                         min="0"
-                         max="100"
-                         value={level.points === 0 ? "" : level.points}
-                         onChange={(e) => {
-                           const inputValue = e.target.value;
-                           const newPoints = inputValue === "" ? 0 : parseInt(inputValue) || 0;
-                           const newLevels = [...rubricConfig.performanceLevels];
-                           newLevels[index].points = newPoints;
-                           
-                           setRubricConfig(prev => ({
-                             ...prev,
-                             performanceLevels: newLevels
-                           }));
-                           markAsUnsaved();
-                         }}
-                         className="w-full"
-                       />
-                     </div>
-                   ))}
-                 </div>
-               </div>
+            {currentStep === "assessment" && (
+              <AssessmentEditor rubricConfig={rubricConfig} gradingPrompt={gradingPrompt} strictnessLevel={strictnessLevel} onRubricChange={(value) => { setRubricConfig(value); setAssessmentReady(true); markAsUnsaved() }} onGradingPromptChange={(value) => { setGradingPrompt(value); setAssessmentReady(true); markAsUnsaved() }} onStrictnessChange={(value) => { setStrictnessLevel(value); setAssessmentReady(true); markAsUnsaved() }} disabled={processing} idPrefix="builder-assessment" />
+            )}
 
-               {/* Rubric Table */}
-               <div className="space-y-4">
-                 <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                   <table className="w-full border-collapse min-w-[1000px]">
-                     <thead>
-                       <tr className="bg-gray-50">
-                         <th className="border-r border-gray-300 p-4 text-left font-medium w-[250px]">CRITERIA</th>
-                         {rubricConfig.performanceLevels.map((level, index) => (
-                           <th key={index} className="border-r border-gray-300 p-4 text-center font-medium w-[200px] last:border-r-0">
-                             {level.name} ({level.points} pts)
-                           </th>
-                         ))}
-                       </tr>
-                     </thead>
-                     <tbody>
-                       {rubricConfig.criteria.map((criterion, criterionIndex) => (
-                         <tr key={criterionIndex} className="border-b-2 border-gray-400 last:border-b-0">
-                           <td className="border-r border-gray-300 p-4 relative align-top">
-                             {rubricConfig.criteria.length > 1 && (
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   const newCriteria = rubricConfig.criteria.filter((_, i) => i !== criterionIndex);
-                                   setRubricConfig(prev => ({
-                                     ...prev,
-                                     criteria: newCriteria
-                                   }));
-                                   markAsUnsaved();
-                                 }}
-                                 className="absolute -top-2 -right-2 h-6 w-6 p-0 text-gray-500 hover:text-red-500 transition-colors"
-                               >
-                                 <X className="h-4 w-4" />
-                               </button>
-                             )}
-                             <Textarea
-                               value={criterion.description}
-                               onChange={(e) => {
-                                 const newCriteria = [...rubricConfig.criteria];
-                                 newCriteria[criterionIndex].description = e.target.value;
-                                 setRubricConfig(prev => ({
-                                   ...prev,
-                                   criteria: newCriteria
-                                 }));
-                                 markAsUnsaved();
-                               }}
-                               placeholder="Description of what this criterion evaluates"
-                               className="min-h-[120px] text-sm w-full resize border-0 focus:ring-0 focus:outline-none"
-                             />
-                           </td>
-                           {rubricConfig.performanceLevels.map((level, levelIndex) => (
-                             <td key={levelIndex} className="border-r border-gray-300 p-4 align-top last:border-r-0">
-                               <Textarea
-                                 value={(criterion.descriptions as Record<string, string>)[level.name] || ""}
-                                 onChange={(e) => {
-                                   const newCriteria = [...rubricConfig.criteria];
-                                   if (!newCriteria[criterionIndex].descriptions) {
-                                     newCriteria[criterionIndex].descriptions = {} as Record<string, string>;
-                                   }
-                                   (newCriteria[criterionIndex].descriptions as Record<string, string>)[level.name] = e.target.value;
-                                   setRubricConfig(prev => ({
-                                     ...prev,
-                                     criteria: newCriteria
-                                   }));
-                                   markAsUnsaved();
-                                 }}
-                                 placeholder={`Description for ${level.name} performance`}
-                                 className="min-h-[120px] text-sm w-full resize border-0 focus:ring-0 focus:outline-none"
-                               />
-                             </td>
-                           ))}
-                         </tr>
-                       ))}
-                     </tbody>
-                   </table>
-                 </div>
+            {currentStep === "review" && (
+              <div className="space-y-6">
+                <SimulationBuilderProgress name={name} description={description} studentRole={studentRole} personas={personas} scenes={scenes} learningOutcomes={learningOutcomes} isProcessing={processing} completionStatus={completionStatus || undefined} hasAutofillResult={!!autofillResult} nameCompleted={dbCompletionFields.nameCompleted} descriptionCompleted={dbCompletionFields.descriptionCompleted} studentRoleCompleted={dbCompletionFields.studentRoleCompleted} personasCompleted={dbCompletionFields.personasCompleted} scenesCompleted={dbCompletionFields.scenesCompleted} imagesCompleted={dbCompletionFields.imagesCompleted} learningOutcomesCompleted={dbCompletionFields.learningOutcomesCompleted} assessmentReady={assessmentReady} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card className="border-border bg-card"><CardContent className="p-5"><Users className="h-5 w-5 text-primary" /><p className="mt-4 text-2xl font-semibold">{personas.length}</p><p className="text-sm text-muted-foreground">People configured</p></CardContent></Card>
+                  <Card className="border-border bg-card"><CardContent className="p-5"><Activity className="h-5 w-5 text-primary" /><p className="mt-4 text-2xl font-semibold">{scenes.length}</p><p className="text-sm text-muted-foreground">Scenes in the flow</p></CardContent></Card>
+                  <Card className="border-border bg-card"><CardContent className="p-5"><Target className="h-5 w-5 text-primary" /><p className="mt-4 text-2xl font-semibold">{rubricConfig.criteria.length}</p><p className="text-sm text-muted-foreground">Assessment criteria</p></CardContent></Card>
+                </div>
+                <Card className="border-primary/20 bg-primary/5"><CardContent className="flex flex-col justify-between gap-5 p-6 sm:flex-row sm:items-center"><div><h3 className="text-lg font-semibold">Choose what happens next</h3><p className="mt-1 text-sm text-muted-foreground">Saving keeps the simulation private. Publishing makes it available for assignment. Testing is available after publication.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={handleSave} disabled={isSaving || processing}>{isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Save className="mr-2 h-4 w-4" />}Save draft</Button><Button onClick={handlePublish} disabled={isPublishing || processing}>{isPublishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Rocket className="mr-2 h-4 w-4" />}Publish</Button></div></CardContent></Card>
+              </div>
+            )}
 
-                 {/* Add Criteria Row Button */}
-                 <div className="flex justify-center">
-                   <Button
-                     type="button"
-                     variant="outline"
-                     onClick={() => {
-                       const newDescriptions: Record<string, string> = {};
-                       rubricConfig.performanceLevels.forEach(level => {
-                         newDescriptions[level.name] = "";
-                       });
-                       
-                       const newCriteria = [...rubricConfig.criteria, {
-                         description: "",
-                         descriptions: newDescriptions
-                       }];
-                       setRubricConfig(prev => ({
-                         ...prev,
-                         criteria: newCriteria
-                       }));
-                       markAsUnsaved();
-                     }}
-                     className="flex items-center gap-2"
-                   >
-                     <Plus className="h-4 w-4" />
-                     Add Criteria Row
-                   </Button>
-                 </div>
+            <StudioFooter currentStep={currentStep} onStepChange={handleStepChange} />
+          </section>
+        </div>
+      </div>
+    </main>
 
-                 {/* Total Points Display */}
-                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                   <span className="font-medium">Total Points:</span>
-                   <span className={`font-bold ${rubricConfig.performanceLevels.reduce((sum, level) => sum + level.points, 0) === 100 ? 'text-green-600' : 'text-red-600'}`}>
-                     {rubricConfig.performanceLevels.reduce((sum, level) => sum + level.points, 0)}
-                   </span>
-                 </div>
-               </div>
-             </div>
-           </div>
-         )}
-       </div>
-     </div>
-    {/* Modal for editing persona */}
-    {editingIdx !== null && (
-      (() => {
-        const personaToEdit = editingIdx === -1 
-          ? tempPersonas[0]
-          : editingIdx < tempPersonas.length 
-            ? tempPersonas[editingIdx]
-            : personas[editingIdx - tempPersonas.length];
-        
-        return (
-          <PersonaModal isOpen={true} onClose={() => {
-            setEditingIdx(null);
-            if (editingIdx === -1) {
-              // If we're canceling a new persona creation, clear tempPersonas
-              setTempPersonas([]);
-            }
-          }}>
-            <PersonaCard
-              persona={personaToEdit}
-              defaultTraits={personaToEdit.defaultTraits}
-              onTraitsChange={newTraits => handleTraitsChange(editingIdx, newTraits)}
-              onSave={updatedPersona => handleSavePersona(editingIdx, updatedPersona)}
-              onDelete={() => handleDeletePersona(editingIdx)}
-              editMode={true}
-            />
-          </PersonaModal>
-        );
-      })()
-    )}
-     
-     {/* Modal for editing scene */}
-    {editingSceneIdx !== null && (
-       <SceneModal isOpen={true} onClose={() => setEditingSceneIdx(null)}>
-         <SceneCard
-           scene={editingSceneIdx === -1 ? {
-             id: `scene-${Date.now()}`,
-             title: "New Scene",
-             description: "",
-             personas_involved: [],
-             user_goal: "",
-             sequence_order: scenes.length + 1,
-             image_url: "",
-             timeout_turns: 15
-           } : scenes[editingSceneIdx]}
-           onSave={updatedScene => handleSaveScene(editingSceneIdx, updatedScene)}
-           onDelete={editingSceneIdx === -1 ? undefined : () => handleDeleteScene(editingSceneIdx)}
-           editMode={true}
-           allPersonas={[...personas, ...tempPersonas]}
-           studentRole={autofillResult?.student_role || ""}
-         />
-       </SceneModal>
-     )}
-       </div>
-     </div>
-   </div>
- )
+    <Dialog open={editingIdx !== null} onOpenChange={(open) => { if (!open) { setEditingIdx(null); if (editingIdx === -1) setTempPersonas([]) } }}>
+      <DialogContent className="h-[92vh] max-w-6xl overflow-hidden border-border bg-card p-0">
+        <DialogHeader className="sr-only"><DialogTitle>{editingIdx === -1 ? "Add person" : "Edit person"}</DialogTitle><DialogDescription>Configure this person&apos;s role, context, goals, personality, and optional identity prompt.</DialogDescription></DialogHeader>
+        {editingPersona && <PersonaCard persona={editingPersona} defaultTraits={editingPersona.defaultTraits} onTraitsChange={(traits) => handleTraitsChange(editingIdx ?? -1, traits)} onSave={(persona) => handleSavePersona(editingIdx ?? -1, persona)} onDelete={() => handleDeletePersona(editingIdx ?? -1)} editMode />}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={editingSceneIdx !== null} onOpenChange={(open) => { if (!open) setEditingSceneIdx(null) }}>
+      <DialogContent className="h-[94vh] max-w-6xl overflow-hidden border-border bg-card p-0">
+        <DialogHeader className="sr-only"><DialogTitle>{editingSceneIdx === -1 ? "Add scene" : "Edit scene"}</DialogTitle><DialogDescription>Configure the scene, learner goal, participants, sequence, and any code challenge settings.</DialogDescription></DialogHeader>
+        {editingScene && <SceneCard scene={editingScene} onSave={(scene) => handleSaveScene(editingSceneIdx ?? -1, scene)} onDelete={editingSceneIdx === -1 ? undefined : () => handleDeleteScene(editingSceneIdx ?? -1)} editMode allPersonas={allPersonas} studentRole={studentRole} />}
+      </DialogContent>
+    </Dialog>
+  </div>
+)
 }
-
-

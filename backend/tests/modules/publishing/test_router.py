@@ -165,6 +165,42 @@ class TestGetDraftSimulations:
         finally:
             app.dependency_overrides.clear()
 
+    def test_get_draft_simulation_rehydrates_grading_configuration(
+        self, client, db_session, mock_user, mock_simulation
+    ):
+        """Draft responses include the assessment fields required by both editors."""
+        mock_simulation.grading_prompt = "Prioritize evidence from the case."
+        mock_simulation.grading_config = {
+            "title": "Decision Quality",
+            "criteria": [{
+                "description": "Uses evidence",
+                "descriptions": {"Strong": "Uses specific evidence."},
+            }],
+            "performance_levels": [{"name": "Strong", "points": 90}],
+            "strictness_level": 4,
+        }
+        db_session.commit()
+
+        async def override_get_current_user():
+            return mock_user
+
+        app.dependency_overrides[get_current_user] = override_get_current_user
+        try:
+            response = client.get(
+                f"/api/publishing/simulations/drafts/{mock_simulation.id}"
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["grading_prompt"] == "Prioritize evidence from the case."
+            assert data["rubric_title"] == "Decision Quality"
+            assert data["rubric_criteria"] == mock_simulation.grading_config["criteria"]
+            assert data["rubric_performance_levels"] == mock_simulation.grading_config["performance_levels"]
+            assert data["strictness_level"] == 4
+            assert data["grading_config"]["strictness_level"] == 4
+        finally:
+            app.dependency_overrides.clear()
+
 
 class TestGetSimulationFull:
     """Tests for GET /api/publishing/simulations/{id}/full endpoint."""

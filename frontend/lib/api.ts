@@ -460,6 +460,14 @@ export const apiClient = {
     return response.json()
   },
 
+  updateCohortStudentStatus: async (cohortId: string, studentId: number, status: 'approved' | 'rejected'): Promise<any> => {
+    const response = await apiRequest(`/professor/cohorts/${cohortId}/students/${studentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    })
+    return response.json()
+  },
+
   removeStudentFromCohort: async (cohortId: string, studentId: number): Promise<any> => {
     const response = await apiRequest(`/professor/cohorts/${cohortId}/students/${studentId}`, {
       method: 'DELETE',

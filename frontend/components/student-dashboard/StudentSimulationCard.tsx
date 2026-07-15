@@ -1,36 +1,43 @@
 "use client"
 
-import { Play } from "lucide-react"
+import { useId } from "react"
+import { Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { SimulationCardShell } from "@/components/simulation-card-shell"
 import { getImageUrl } from "@/lib/image-utils"
 import type { StudentSimulationPreviewModel } from "@/lib/student-simulation"
 
 export function StudentSimulationCard({ simulation, onSelect }: { simulation: StudentSimulationPreviewModel; onSelect: () => void }) {
+  const id = useId()
+  const titleId = `${id}-title`
+  const statusId = `${id}-status`
+  const scoreId = `${id}-score`
+  const metadataId = `${id}-metadata`
+  const actionId = `${id}-action`
+  const describedBy = [statusId, simulation.score != null ? scoreId : null, metadataId, actionId].filter(Boolean).join(" ")
+
   return (
-    <article className="group relative w-[19rem] shrink-0 text-left sm:w-[22rem]">
-      <button type="button" onClick={onSelect} className="absolute inset-0 z-10 rounded-xl" aria-label={`Preview ${simulation.title}`}>
-        <span className="sr-only">Preview {simulation.title}</span>
+    <article className="group/card relative w-[19rem] shrink-0 text-left sm:w-[22rem]">
+      <button type="button" onClick={onSelect} className="absolute inset-0 z-10 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" aria-labelledby={titleId} aria-describedby={describedBy}>
+        <span id={actionId} className="sr-only">Opens simulation preview.</span>
       </button>
-      <div className="relative aspect-[16/9] overflow-hidden rounded-xl border border-border bg-card shadow-sm transition duration-normal ease-emphasized group-hover:-translate-y-1 group-hover:border-primary/40 group-hover:shadow-lg group-focus-within:ring-2 group-focus-within:ring-ring group-focus-within:ring-offset-2">
-        {simulation.imageUrl ? (
-          <img src={getImageUrl(simulation.imageUrl)} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-slow group-hover:scale-[1.03]" />
-        ) : (
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_20%,hsl(var(--primary)/0.35),transparent_34%),linear-gradient(145deg,hsl(var(--surface-muted)),hsl(var(--background)))]" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent" />
-        <Badge variant="secondary" className="absolute left-4 top-4 border border-border/70 bg-background/80 backdrop-blur">{simulation.statusLabel}</Badge>
-        {simulation.score != null && <Badge className="absolute right-4 top-4">{Math.round(simulation.score)}%</Badge>}
-        <div className="absolute inset-x-0 bottom-0 p-4">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{simulation.industry || simulation.cohort}</p>
-          <h3 className="line-clamp-2 font-heading text-xl font-semibold leading-tight text-foreground">{simulation.title}</h3>
-          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+      <SimulationCardShell
+        imageSrc={simulation.imageUrl ? getImageUrl(simulation.imageUrl) : null}
+        badge={<Badge id={statusId} variant="secondary" className="border border-border/70 bg-background/85 backdrop-blur">{simulation.statusLabel}</Badge>}
+        trailingBadge={simulation.score != null ? <Badge id={scoreId}>{Math.round(simulation.score)}% score</Badge> : null}
+      >
+        <div className="p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{simulation.industry || simulation.cohort || "Interactive case"}</p>
+          <h3 id={titleId} className="mt-1 line-clamp-2 min-h-12 font-heading text-lg font-semibold leading-tight text-foreground">{simulation.title}</h3>
+          {simulation.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{simulation.description}</p>}
+          <div id={metadataId} className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
             <span>{Math.round(simulation.progress)}% complete</span>
-            <span className="inline-flex items-center gap-1 font-medium text-foreground"><Play className="h-3.5 w-3.5 fill-current" />Preview</span>
+            <span className="inline-flex items-center gap-1 font-medium text-foreground"><Eye className="h-3.5 w-3.5" aria-hidden="true" />Preview</span>
           </div>
-          <Progress value={simulation.progress} className="mt-2 h-1 bg-muted" aria-label={`${simulation.title} progress`} />
+          <Progress value={simulation.progress} className="mt-2 h-1.5 bg-muted" aria-label={`${simulation.title} progress`} />
         </div>
-      </div>
+      </SimulationCardShell>
     </article>
   )
 }

@@ -17,7 +17,8 @@ async def handle_timeout(
     persona_id: Optional[int],
     scene_progression_handler: SceneProgressionHandler,
     orchestrator_manager: OrchestratorManager,
-    generate_scene_intro_fn: Optional[callable] = None
+    generate_scene_intro_fn: Optional[callable] = None,
+    consequence_service=None,
 ) -> Optional[str]:
     """
     Handle timeout detection and scene progression.
@@ -40,24 +41,28 @@ async def handle_timeout(
     timeout_turns = current_scene.get('timeout_turns') or current_scene.get('max_turns', 15)
     
     if orchestrator.state.turn_count >= timeout_turns:
-        # Handle timeout - progress to next scene
-        progression_result = scene_progression_handler.progress_to_next_scene(
-            orchestrator=orchestrator,
-            user_progress=user_progress,
-            current_scene_id=current_scene_id,
-            generate_scene_intro_fn=generate_scene_intro_fn
+        consequence = await consequence_service.complete_scene(
+            user_progress_id=user_progress.id,
+            scene_id=current_scene_id,
+            trigger_type="timeout",
+            turn_count=orchestrator.state.turn_count,
+            scene_progression_handler=scene_progression_handler,
         )
         
         # Save orchestrator state
         orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
         # Note: Commit handled by service layer
         
-        if progression_result.get('simulation_complete'):
-            # Simulation complete
-            return json.dumps({'done': True, 'persona_name': persona_name, 'persona_id': str(persona_id) if persona_id else None, 'scene_completed': True, 'next_scene_id': None, 'turn_count': orchestrator.state.turn_count, 'simulation_complete': True, 'full_content': full_response})
-        
-        # Scene progressed
-        next_scene_id = progression_result['next_scene_id']
-        return json.dumps({'done': True, 'persona_name': persona_name, 'persona_id': str(persona_id) if persona_id else None, 'scene_completed': True, 'next_scene_id': next_scene_id, 'turn_count': 0, 'full_content': full_response})
+        return json.dumps({
+            'done': True,
+            'persona_name': persona_name,
+            'persona_id': str(persona_id) if persona_id else None,
+            'scene_completed': consequence.generation_status == 'ready',
+            'next_scene_id': None,
+            'turn_count': orchestrator.state.turn_count,
+            'full_content': full_response,
+            'consequence': consequence.model_dump(mode='json'),
+            'awaiting_consequence_ack': True,
+        })
     
     return None

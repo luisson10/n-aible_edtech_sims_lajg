@@ -25,6 +25,7 @@ from common.db.models import UserProgress
 from common.config import get_settings
 from common.utils.concurrency import ai_concurrency_slot
 from common.services.conversation_cache_service import conversation_cache
+from modules.simulation.services.consequence_service import ConsequenceService
 
 settings = get_settings()
 _is_dev = settings.environment != "production"
@@ -37,6 +38,38 @@ class ChatHandler:
     def __init__(self, db: Session, repository: SimulationRepository):
         self.db = db
         self.repository = repository
+        self.consequence_service = ConsequenceService(db, repository)
+
+    def _build_scene_context(self, orchestrator, current_scene, user_progress_id: int):
+        """One canonical prompt context for every persona routing path."""
+        return {
+            'current_scene': {
+                'title': current_scene.get('title'),
+                'description': current_scene.get('description'),
+                'objectives': current_scene.get('objectives', []),
+            },
+            'simulation': {
+                'title': orchestrator.simulation.get('title'),
+                'description': orchestrator.simulation.get('description'),
+                'challenge': orchestrator.simulation.get('challenge'),
+                'student_role': orchestrator.simulation.get('student_role'),
+            },
+            'what_has_changed': self.consequence_service.build_prompt_context(user_progress_id),
+        }
+
+    @staticmethod
+    def _record_learner_turn(orchestrator, orchestrator_manager, user_progress) -> int:
+        """Count one learner message, independent of how many agents answer it."""
+        turn_count_before = orchestrator.state.turn_count
+        orchestrator.state.turn_count += 1
+        orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
+        logger.info(
+            "[TURN_COUNT] Incremented learner turn_count from %s to %s for user_progress_id=%s",
+            turn_count_before,
+            orchestrator.state.turn_count,
+            user_progress.id,
+        )
+        return orchestrator.state.turn_count
     
     async def handle_stream_message(
         self,
@@ -80,6 +113,11 @@ class ChatHandler:
             if user_progress.user_id != user_id:
                 yield f"data: {json.dumps({'error': 'Access denied'})}\n\n"
                 return
+
+            pending_consequence = self.repository.get_pending_scene_consequence(user_progress.id)
+            if pending_consequence:
+                yield f"data: {json.dumps({'error': 'Review the scene consequence before continuing.', 'code': 'CONSEQUENCE_PENDING', 'consequence': self.consequence_service.to_response(pending_consequence).model_dump(mode='json')})}\n\n"
+                return
             
             if not user_progress.orchestrator_data:
                 yield f"data: {json.dumps({'error': 'Simulation not properly initialized'})}\n\n"
@@ -99,6 +137,9 @@ class ChatHandler:
             
             # Load saved state (this may restore session_id from previous request)
             orchestrator_manager.load_orchestrator_state(orchestrator, user_progress)
+            orchestrator.state.state_variables["what_has_changed"] = (
+                self.consequence_service.build_prompt_context(user_progress.id)
+            )
             
             # Verify session_id is set after initialization and state loading
             if orchestrator.langchain_enabled and (not hasattr(orchestrator.state, 'session_id') or not orchestrator.state.session_id):
@@ -188,6 +229,9 @@ class ChatHandler:
                             message_order=next_order,
                             session_id=user_message_session_id
                         )
+                        current_turn_count = self._record_learner_turn(
+                            orchestrator, orchestrator_manager, user_progress
+                        )
                         self.db.commit()
                         
                         # Append to conversation cache
@@ -208,10 +252,8 @@ class ChatHandler:
                             }
                         )
                         
-                        # NOTE: For @all messages, turn_count is incremented per persona response
-                        # We don't increment here because each persona response counts as a separate turn
                         logger.debug(
-                            f"[TURN_COUNT] @all message saved - turn_count will be incremented per persona response, "
+                            f"[TURN_COUNT] @all learner message saved, "
                             f"current turn_count={orchestrator.state.turn_count}"
                         )
                     
@@ -224,19 +266,9 @@ class ChatHandler:
                             scene_personas.append(persona)
 
                     # Build nested scene_context matching the single @mention path
-                    scene_context_for_all = {
-                        'current_scene': {
-                            'title': current_scene.get('title'),
-                            'description': current_scene.get('description'),
-                            'objectives': current_scene.get('objectives', []),
-                        },
-                        'simulation': {
-                            'title': orchestrator.simulation.get('title'),
-                            'description': orchestrator.simulation.get('description'),
-                            'challenge': orchestrator.simulation.get('challenge'),
-                            'student_role': orchestrator.simulation.get('student_role'),
-                        },
-                    }
+                    scene_context_for_all = self._build_scene_context(
+                        orchestrator, current_scene, user_progress.id
+                    )
 
                     if not scene_personas:
                         # No personas in scene - yield error message
@@ -259,19 +291,7 @@ class ChatHandler:
                                 # Build the full nested structure that _get_system_prompt() expects.
                                 # Passing current_scene directly (flat dict) left both simulation_block
                                 # and scene_block empty — agents had no case study or scene context.
-                                scene_context={
-                                    'current_scene': {
-                                        'title': current_scene.get('title'),
-                                        'description': current_scene.get('description'),
-                                        'objectives': current_scene.get('objectives', []),
-                                    },
-                                    'simulation': {
-                                        'title': orchestrator.simulation.get('title'),
-                                        'description': orchestrator.simulation.get('description'),
-                                        'challenge': orchestrator.simulation.get('challenge'),
-                                        'student_role': orchestrator.simulation.get('student_role'),
-                                    },
-                                },
+                                scene_context=scene_context_for_all,
                                 user_progress_id=user_progress.id,
                                 scene_id=correct_scene_id,
                                 db=self.db
@@ -298,7 +318,6 @@ class ChatHandler:
                             persona_id_resp = gen_data['persona_id']
                             stream_gen = gen_data['generator']
                             
-                            orchestrator.state.turn_count += 1
                             current_turn_count = orchestrator.state.turn_count
                             
                             # Stream tokens as they arrive from OpenAI
@@ -446,6 +465,9 @@ class ChatHandler:
                                 message_order=next_order,
                                 session_id=user_message_session_id
                             )
+                            current_turn_count = self._record_learner_turn(
+                                orchestrator, orchestrator_manager, user_progress
+                            )
                             self.db.commit()
 
                             conversation_cache.append_message(
@@ -466,7 +488,7 @@ class ChatHandler:
                             )
 
                             logger.debug(
-                                f"[TURN_COUNT] Multi-mention message saved - turn_count will be incremented per persona response, "
+                                f"[TURN_COUNT] Multi-mention learner message saved, "
                                 f"current turn_count={orchestrator.state.turn_count}"
                             )
 
@@ -492,8 +514,6 @@ class ChatHandler:
 
                             persona_agent = orchestrator.persona_agents[str(p_sim_id)]
 
-                            # Increment turn_count per persona response (matching @all behavior)
-                            orchestrator.state.turn_count += 1
                             current_turn_count = orchestrator.state.turn_count
 
                             # Stream persona response sequentially
@@ -504,19 +524,9 @@ class ChatHandler:
                             try:
                                 async for token in persona_agent.chat_stream(
                                     message=message,
-                                    scene_context={
-                                        'current_scene': {
-                                            'title': current_scene.get('title'),
-                                            'description': current_scene.get('description'),
-                                            'objectives': current_scene.get('objectives', []),
-                                        },
-                                        'simulation': {
-                                            'title': orchestrator.simulation.get('title'),
-                                            'description': orchestrator.simulation.get('description'),
-                                            'challenge': orchestrator.simulation.get('challenge'),
-                                            'student_role': orchestrator.simulation.get('student_role'),
-                                        },
-                                    },
+                                    scene_context=self._build_scene_context(
+                                        orchestrator, current_scene, user_progress.id
+                                    ),
                                     user_progress_id=user_progress.id,
                                     scene_id=correct_scene_id,
                                     db=self.db,
@@ -560,6 +570,7 @@ class ChatHandler:
                             )
 
                             current_order += 1
+                            full_response = full_response_multi
 
                         ai_response = ""  # Already streamed
                 else:
@@ -652,6 +663,9 @@ class ChatHandler:
                                         message_order=next_order,
                                         session_id=user_message_session_id
                                     )
+                                    current_turn_count = self._record_learner_turn(
+                                        orchestrator, orchestrator_manager, user_progress
+                                    )
                                     self.db.commit()  # Commit so agent.chat() can see this message when loading history
                                     
                                     # Append to conversation cache
@@ -672,29 +686,17 @@ class ChatHandler:
                                         }
                                     )
                                     
-                                    # NOTE: For single @mention, turn_count will be incremented when persona responds
-                                    # (matching @all behavior where turn_count increments per persona response at line 217)
                                     logger.debug(
-                                        f"[TURN_COUNT] User message saved - turn_count will be incremented when persona responds, "
+                                        f"[TURN_COUNT] Single-mention learner message saved, "
                                         f"current turn_count={orchestrator.state.turn_count}"
                                     )
                                 
                                 # Build the full scene_context that _get_system_prompt() expects.
                                 # Previously this was a flat dict missing the 'simulation' key,
                                 # which caused the CASE STUDY CONTEXT block to always be empty.
-                                scene_context = {
-                                    'current_scene': {
-                                        'title': current_scene.get('title'),
-                                        'description': current_scene.get('description'),
-                                        'objectives': current_scene.get('objectives', []),
-                                    },
-                                    'simulation': {
-                                        'title': orchestrator.simulation.get('title'),
-                                        'description': orchestrator.simulation.get('description'),
-                                        'challenge': orchestrator.simulation.get('challenge'),
-                                        'student_role': orchestrator.simulation.get('student_role'),
-                                    },
-                                }
+                                scene_context = self._build_scene_context(
+                                    orchestrator, current_scene, user_progress.id
+                                )
 
                                 # Apply AI concurrency limits around persona chat
                                 async with ai_concurrency_slot() as acquired:
@@ -748,15 +750,7 @@ class ChatHandler:
                                                 f"{len(response_text)} chars for user_progress_id={user_progress_id}"
                                             )
                                             
-                                            # CRITICAL: Increment turn_count when persona responds (matching @all behavior)
-                                            turn_count_before = orchestrator.state.turn_count
-                                            orchestrator.state.turn_count += 1
                                             current_turn_count = orchestrator.state.turn_count
-                                            logger.info(
-                                                f"[TURN_COUNT] Incremented turn_count from {turn_count_before} to {current_turn_count} "
-                                                f"for single @mention persona response (user_progress_id={user_progress_id}, persona={persona_name})"
-                                            )
-                                            # Save orchestrator state immediately after incrementing turn_count
                                             orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
                                             self.db.commit()
                                             
@@ -784,8 +778,23 @@ class ChatHandler:
                                                 }
                                             )
                                             
-                                            # CRITICAL: Yield final metadata with turn_count (matching @all behavior)
-                                            yield f"data: {json.dumps({'done': True, 'persona_name': persona_name, 'persona_id': str(persona_id) if persona_id else None, 'scene_completed': False, 'next_scene_id': None, 'turn_count': current_turn_count, 'full_content': response_text})}\n\n"
+                                            timeout_result = await handle_timeout(
+                                                orchestrator=orchestrator,
+                                                user_progress=user_progress,
+                                                current_scene=current_scene,
+                                                current_scene_id=correct_scene_id,
+                                                full_response=response_text,
+                                                persona_name=persona_name,
+                                                persona_id=persona_id,
+                                                scene_progression_handler=scene_progression_handler,
+                                                orchestrator_manager=orchestrator_manager,
+                                                generate_scene_intro_fn=generate_scene_intro_fn,
+                                                consequence_service=self.consequence_service,
+                                            )
+                                            if timeout_result is not None:
+                                                yield f"data: {timeout_result}\n\n"
+                                            else:
+                                                yield f"data: {json.dumps({'done': True, 'persona_name': persona_name, 'persona_id': str(persona_id) if persona_id else None, 'scene_completed': False, 'next_scene_id': None, 'turn_count': current_turn_count, 'full_content': response_text})}\n\n"
                                             
                                             # CRITICAL: Return early for single @mention (matching @all behavior)
                                             return
@@ -858,16 +867,7 @@ class ChatHandler:
                     )
                     self.db.flush()
                     
-                    # CRITICAL: Increment turn_count when user sends message (not when orchestrator responds)
-                    # This ensures user messages count toward timeout turns
-                    turn_count_before = orchestrator.state.turn_count
-                    orchestrator.state.turn_count += 1
-                    logger.info(
-                        f"[TURN_COUNT] Incremented turn_count from {turn_count_before} to {orchestrator.state.turn_count} "
-                        f"for user message to orchestrator (user_progress_id={user_progress_id}, message='{message[:50]}...')"
-                    )
-                    # Save orchestrator state immediately after incrementing turn_count
-                    orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
+                    self._record_learner_turn(orchestrator, orchestrator_manager, user_progress)
                     # CRITICAL: Commit immediately to persist turn_count (not just flush)
                     # This ensures turn_count is saved even if later processing fails
                     self.db.commit()
@@ -947,26 +947,17 @@ class ChatHandler:
                     }
                 )
             
-            # NOTE: For @all messages, turn_count is incremented per persona response (line 217)
-            # and we already yielded the final metadata per persona (line 227), so we can return early.
-            # For single @mention messages, turn_count is incremented when persona responds (line 391)
-            # and we already yielded the final metadata (line 479), so we can return early.
+            # Every learner message has already incremented turn_count exactly once.
+            # Multi-persona routes finish their full fan-out before checking timeout here.
+            # Successful single-persona routes check timeout immediately after their reply above.
             # Only orchestrator messages need to continue to the final yield.
             if is_all_message_global:
                 # @all messages: already yielded per persona, no need for final yield
                 logger.debug(
-                    f"[TURN_COUNT] @all message - turn_count already incremented per persona response, "
+                    f"[TURN_COUNT] @all message - learner turn counted once before fan-out, "
                     f"already yielded final metadata per persona, current turn_count={orchestrator.state.turn_count}"
                 )
-                return
-            elif is_multi_mention:
-                # Multi-mention: all persona responses already streamed and saved.
-                # Still need to update last_activity and run handle_timeout so turn-limit
-                # enforcement works correctly after multiple persona turns.
-                orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
-                user_progress.last_activity = datetime.utcnow()
-                self.db.commit()
-                await handle_timeout(
+                timeout_result = await handle_timeout(
                     orchestrator=orchestrator,
                     user_progress=user_progress,
                     current_scene=current_scene,
@@ -976,15 +967,55 @@ class ChatHandler:
                     persona_id=persona_id,
                     scene_progression_handler=scene_progression_handler,
                     orchestrator_manager=orchestrator_manager,
-                    generate_scene_intro_fn=generate_scene_intro_fn
+                    generate_scene_intro_fn=generate_scene_intro_fn,
+                    consequence_service=self.consequence_service,
                 )
+                if timeout_result is not None:
+                    yield f"data: {timeout_result}\n\n"
+                return
+            elif is_multi_mention:
+                # Multi-mention: all persona responses already streamed and saved.
+                # Still need to update last_activity and run handle_timeout so turn-limit
+                # enforcement works after the complete multi-persona fan-out.
+                orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
+                user_progress.last_activity = datetime.utcnow()
+                self.db.commit()
+                timeout_result = await handle_timeout(
+                    orchestrator=orchestrator,
+                    user_progress=user_progress,
+                    current_scene=current_scene,
+                    current_scene_id=correct_scene_id,
+                    full_response=full_response,
+                    persona_name=persona_name,
+                    persona_id=persona_id,
+                    scene_progression_handler=scene_progression_handler,
+                    orchestrator_manager=orchestrator_manager,
+                    generate_scene_intro_fn=generate_scene_intro_fn,
+                    consequence_service=self.consequence_service,
+                )
+                if timeout_result is not None:
+                    yield f"data: {timeout_result}\n\n"
                 return
             elif persona_id:
-                # Single @mention messages: already yielded final metadata at line 479, no need for final yield
-                logger.debug(
-                    f"[TURN_COUNT] Single @mention message - turn_count already incremented when persona responded, "
-                    f"already yielded final metadata at line 479, current turn_count={orchestrator.state.turn_count}"
+                # Successful single-persona streams return above. Capacity and error fallbacks
+                # still use the same post-reply timeout boundary.
+                timeout_result = await handle_timeout(
+                    orchestrator=orchestrator,
+                    user_progress=user_progress,
+                    current_scene=current_scene,
+                    current_scene_id=correct_scene_id,
+                    full_response=full_response,
+                    persona_name=persona_name,
+                    persona_id=persona_id,
+                    scene_progression_handler=scene_progression_handler,
+                    orchestrator_manager=orchestrator_manager,
+                    generate_scene_intro_fn=generate_scene_intro_fn,
+                    consequence_service=self.consequence_service,
                 )
+                if timeout_result is not None:
+                    yield f"data: {timeout_result}\n\n"
+                else:
+                    yield f"data: {json.dumps({'done': True, 'persona_name': persona_name, 'persona_id': str(persona_id), 'scene_completed': False, 'next_scene_id': None, 'turn_count': orchestrator.state.turn_count, 'full_content': full_response})}\n\n"
                 return
             
             # Only orchestrator messages continue here
@@ -1004,7 +1035,8 @@ class ChatHandler:
                 persona_id=persona_id,
                 scene_progression_handler=scene_progression_handler,
                 orchestrator_manager=orchestrator_manager,
-                generate_scene_intro_fn=generate_scene_intro_fn
+                generate_scene_intro_fn=generate_scene_intro_fn,
+                consequence_service=self.consequence_service,
             )
             
             if timeout_result is not None:

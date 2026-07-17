@@ -643,6 +643,11 @@ AVAILABLE AGENTS:
 CURRENT SCENE DETAILS:
 {self._get_current_scene_details()}
 
+WHAT HAS CHANGED — DYNAMIC CONTEXT FROM COMPLETED SCENES:
+{self.state.state_variables.get('what_has_changed') or 'No prior consequences yet.'}
+
+This is additive continuity context. Never rewrite the professor-authored scene, objective, or success metric from it.
+
 ════════  BUSINESS SIMULATION FOCUS  ═══════════════════════
 • Encourage strategic thinking and analytical depth
 • Promote consideration of multiple stakeholders and perspectives
@@ -791,4 +796,3 @@ Image: {scene.get('image_url', 'No image')}
         intro += f"\n*You have {self._get_turns_remaining()} turns to achieve the objective.*"
         
         return intro
-

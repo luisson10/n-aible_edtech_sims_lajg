@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+from .consequence_schemas import SceneConsequenceResponse, WhatHasChangedItem
+
 
 # Request Models
 
@@ -105,6 +107,7 @@ class SimulationSceneResponse(BaseModel):
     updated_at: Optional[datetime] = None
     personas_involved: Optional[List[str]] = None
     personas: List[SimulationPersonaResponse] = []
+    what_has_changed: List[WhatHasChangedItem] = Field(default_factory=list)
 
 
 class SimulationStartResponse(BaseModel):
@@ -119,6 +122,8 @@ class SimulationStartResponse(BaseModel):
     turn_count: Optional[int] = 0
     completed_scene_ids: Optional[List[int]] = []
     sandbox_id: Optional[str] = None
+    consequences: List[SceneConsequenceResponse] = Field(default_factory=list)
+    pending_consequence: Optional[SceneConsequenceResponse] = None
 
 
 class SimulationChatResponse(BaseModel):
@@ -133,6 +138,9 @@ class SimulationChatResponse(BaseModel):
     scene_intro_message: Optional[str] = None
     simulation_complete: Optional[bool] = None
     next_scene: Optional[Dict[str, Any]] = None
+    consequence: Optional[SceneConsequenceResponse] = None
+    consequences: List[SceneConsequenceResponse] = Field(default_factory=list)
+    awaiting_consequence_ack: bool = False
     
     # Legacy fields for compatibility
     message_id: Optional[int] = None

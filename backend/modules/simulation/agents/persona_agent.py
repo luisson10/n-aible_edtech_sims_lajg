@@ -437,6 +437,15 @@ Read the scene description above carefully. If it describes urgency, conflict, o
 let that tension come through in how you speak — be more direct, more guarded, or more pressured. \
 If it describes a planning or exploratory session, be more deliberate and thoughtful. \
 The stakes of the situation should be felt in your word choice and energy — not stated explicitly, but present."""
+
+                what_changed = scene_context.get('what_has_changed', '')
+                if what_changed:
+                    scene_block += f"""
+
+WHAT HAS CHANGED — ESTABLISHED CONSEQUENCES FROM EARLIER SCENES:
+{what_changed}
+
+Use these consequences to shape your reactions and continuity. They are additional dynamic context only: never replace, rewrite, or weaken the professor-authored current scene, objective, or success metric."""
         else:
             if _is_dev:
                 debug_log(f"_get_system_prompt: no scene_context provided (type={type(scene_context)})")

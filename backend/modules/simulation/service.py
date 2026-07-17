@@ -18,7 +18,8 @@ from modules.simulation.schemas.dto import (
     SimulationStartResponse, SimulationChatResponse,
     UserProgressResponse, SimulationSceneResponse
 )
-from modules.simulation.services import GradingService, ProgressService, LifecycleService
+from modules.simulation.services import GradingService, ProgressService, LifecycleService, ConsequenceService
+from modules.simulation.schemas.consequence_schemas import ConsequenceHistoryResponse
 from common.db.models import ConversationLog
 from common.exceptions import NotFoundError, ForbiddenError
 from common.config import get_settings
@@ -44,6 +45,45 @@ class SimulationService:
         self.lifecycle_service = LifecycleService(db, self.repository)
         self.grading_service = GradingService(db, self.repository)
         self.progress_service = ProgressService(db, self.repository)
+        self.consequence_service = ConsequenceService(db, self.repository)
+
+    def _build_scene_payload(self, scene_id: int, user_progress_id: int) -> Optional[Dict[str, Any]]:
+        scene = self.repository.get_scene_by_id(scene_id)
+        if not scene:
+            return None
+        personas = self.repository.get_personas_for_scene(scene_id)
+        return {
+            'id': scene.id,
+            'simulation_id': scene.simulation_id,
+            'title': scene.title,
+            'description': scene.description,
+            'objectives': [scene.user_goal] if scene.user_goal else ['Continue the simulation'],
+            'user_goal': scene.user_goal,
+            'image_url': scene.image_url,
+            'scene_order': scene.scene_order,
+            'timeout_turns': scene.timeout_turns or 15,
+            'success_metric': scene.success_metric,
+            'personas_involved': [p.name for p in personas],
+            'personas': [
+                {
+                    'id': p.id,
+                    'simulation_id': p.simulation_id,
+                    'name': p.name,
+                    'role': p.role,
+                    'background': p.background,
+                    'correlation': p.correlation,
+                    'primary_goals': p.primary_goals if isinstance(p.primary_goals, list) else ([p.primary_goals] if p.primary_goals else []),
+                    'personality_traits': p.personality_traits or {},
+                    'image_url': p.image_url,
+                }
+                for p in personas
+            ],
+            'scene_type': getattr(scene, 'scene_type', None) or 'conversation',
+            'starter_code': getattr(scene, 'starter_code', None),
+            'data_files': getattr(scene, 'data_files', None),
+            'reference_files': getattr(scene, 'reference_files', None),
+            'what_has_changed': [item.model_dump(mode='json') for item in self.consequence_service.what_has_changed(user_progress_id)],
+        }
     
     def generate_scene_intro_message(
         self, 
@@ -112,127 +152,32 @@ class SimulationService:
         
         # Check if this is SUBMIT_FOR_GRADING
         if message.strip() == "SUBMIT_FOR_GRADING":
-            # Load orchestrator
-            orchestrator = self.orchestrator_manager.load_orchestrator(user_progress, user_id)
-            
-            # Initialize LangChain session if needed
-            await self.orchestrator_manager.initialize_langchain_session(orchestrator, user_progress.id)
-            
-            # Load saved state
-            self.orchestrator_manager.load_orchestrator_state(orchestrator, user_progress)
-            
             scene_id_to_use = scene_id if scene_id is not None else user_progress.current_scene_id
-            
-            # Progress to next scene using scene handler
-            progression_result = self.scene_handler.progress_to_next_scene(
-                orchestrator=orchestrator,
-                user_progress=user_progress,
-                current_scene_id=scene_id_to_use,
-                generate_scene_intro_fn=lambda scene: self.lifecycle_service.generate_scene_intro_message(scene, self.repository.get_scene_by_id(scene.get('id')))
+            if scene_id_to_use != user_progress.current_scene_id:
+                raise ForbiddenError("Only the current scene can be submitted")
+
+            orchestrator = self.orchestrator_manager.load_orchestrator(user_progress, user_id)
+            await self.orchestrator_manager.initialize_langchain_session(orchestrator, user_progress.id)
+            self.orchestrator_manager.load_orchestrator_state(orchestrator, user_progress)
+
+            consequence = await self.consequence_service.complete_scene(
+                user_progress_id=user_progress.id,
+                scene_id=scene_id_to_use,
+                trigger_type="submitted",
+                turn_count=orchestrator.state.turn_count,
+                scene_progression_handler=self.scene_handler,
             )
-            
-            if progression_result.get('simulation_complete'):
-                # Clean up sandbox if one was created
-                if user_progress.sandbox_id:
-                    try:
-                        from common.services.sandbox_service import sandbox_service
-                        deleted = await sandbox_service.delete_sandbox(user_progress.sandbox_id)
-                        if deleted:
-                            logger.info(f"[SERVICE] Cleaned up sandbox {user_progress.sandbox_id}")
-                            user_progress.sandbox_id = None
-                        else:
-                            logger.error(f"[SERVICE] Sandbox {user_progress.sandbox_id} teardown returned False — ID retained for retry")
-                    except Exception as e:
-                        logger.error(f"[SERVICE] Sandbox cleanup failed: {e}")
-
-                # Simulation complete
-                self.db.commit()
-                return SimulationChatResponse(
-                    message="🎉 **Congratulations! You have completed the entire simulation.**",
-                    scene_id=scene_id_to_use,
-                    scene_completed=True,
-                    next_scene_id=None,
-                    persona_name="System",
-                    persona_id=None,
-                    turn_count=orchestrator.state.turn_count,
-                    simulation_complete=True
-                )
-            
-            # Save orchestrator state
-            self.orchestrator_manager.save_orchestrator_state(orchestrator, user_progress)
-            self.db.commit()
-
-            # Upload data files for the next scene into sandbox (if applicable)
-            next_scene = progression_result['next_scene']
-            next_scene_id = progression_result['next_scene_id']
-            if user_progress.sandbox_id and next_scene_id:
-                db_next_scene = self.repository.get_scene_by_id(next_scene_id)
-                if db_next_scene and getattr(db_next_scene, "scene_type", "conversation") == "code_challenge":
-                    scene_data_files = getattr(db_next_scene, "data_files", None)
-                    if scene_data_files:
-                        try:
-                            from common.services.sandbox_service import sandbox_service
-                            count = await sandbox_service.upload_scene_data_files(
-                                user_progress.sandbox_id, scene_data_files
-                            )
-                            logger.info(f"[SERVICE] Uploaded {count} data files for scene {next_scene_id}")
-                        except Exception as e:
-                            logger.error(f"[SERVICE] Data file upload failed for scene {next_scene_id}: {e}")
-
-            # Build response
-            scene_intro_message = progression_result.get('scene_intro_message')
-            
-            # Load personas for the next scene
-            next_scene_personas = self.repository.get_personas_for_scene(next_scene_id)
-            personas_data = [
-                {
-                    'id': p.id,
-                    'simulation_id': p.simulation_id,
-                    'name': p.name,
-                    'role': p.role,
-                    'background': getattr(p, 'background', None),
-                    'correlation': getattr(p, 'correlation', None),
-                    'primary_goals': (
-                        [p.primary_goals] if isinstance(getattr(p, 'primary_goals', None), str) and getattr(p, 'primary_goals', None) else
-                        getattr(p, 'primary_goals', []) if isinstance(getattr(p, 'primary_goals', None), list) else []
-                    ),
-                    'personality_traits': getattr(p, 'personality_traits', None) or {},
-                    'image_url': getattr(p, 'image_url', None)
-                }
-                for p in next_scene_personas
-            ]
-            
-            ai_response = f"🎉 **Scene Submitted!** Moving to next scene:\n\n**{next_scene.get('title', 'Next Scene')}**\n\n**Objective:** {next_scene.get('objectives', ['Continue the simulation'])[0]}"
-            
-            # Get DB scene for code challenge fields
-            db_next_scene = self.repository.get_scene_by_id(next_scene_id) if next_scene_id else None
-            next_scene_obj = {
-                'id': next_scene.get('id'),
-                'title': next_scene.get('title'),
-                'description': next_scene.get('description'),
-                'objectives': next_scene.get('objectives', []),
-                'image_url': next_scene.get('image_url'),
-                'scene_order': next_scene.get('scene_order') or (orchestrator.state.current_scene_index + 1),
-                'user_goal': next_scene.get('objectives', ['Continue the simulation'])[0] if next_scene.get('objectives') else 'Continue the simulation',
-                'timeout_turns': next_scene.get('timeout_turns') or next_scene.get('max_turns', 15),
-                'personas': personas_data,
-                'personas_involved': next_scene.get('personas_involved', []),
-                'scene_type': getattr(db_next_scene, 'scene_type', None) or 'conversation' if db_next_scene else 'conversation',
-                'starter_code': getattr(db_next_scene, 'starter_code', None) if db_next_scene else None,
-                'data_files': getattr(db_next_scene, 'data_files', None) if db_next_scene else None,
-                'reference_files': getattr(db_next_scene, 'reference_files', None) if db_next_scene else None,
-            }
-            
             return SimulationChatResponse(
-                message=ai_response,
-                scene_id=next_scene_id,
-                scene_completed=True,
-                next_scene_id=next_scene_id,
-                next_scene=next_scene_obj,
+                message="Your decisions are shaping what happens next.",
+                scene_id=scene_id_to_use,
+                scene_completed=consequence.generation_status == "ready",
+                next_scene_id=None,
                 persona_name="System",
                 persona_id=None,
-                turn_count=0,
-                scene_intro_message=scene_intro_message
+                turn_count=orchestrator.state.turn_count,
+                consequence=consequence,
+                consequences=self.consequence_service.list_responses(user_progress.id, ready_only=True),
+                awaiting_consequence_ack=True,
             )
         
         # For other messages, return a basic response
@@ -243,6 +188,118 @@ class SimulationService:
             persona_name="System",
             persona_id=None,
             turn_count=0
+        )
+
+    def get_consequence_history(
+        self, user_progress_id: int, user_id: int
+    ) -> ConsequenceHistoryResponse:
+        progress = self.repository.get_user_progress_by_id(user_progress_id)
+        if not progress:
+            raise NotFoundError("User progress not found")
+        if progress.user_id != user_id:
+            raise ForbiddenError("Access denied")
+        return ConsequenceHistoryResponse(
+            consequences=self.consequence_service.list_responses(user_progress_id, ready_only=True),
+            pending_consequence=self.consequence_service.get_pending_response(user_progress_id),
+        )
+
+    async def resolve_pending_consequence(
+        self, user_progress_id: int, user_id: int
+    ) -> ConsequenceHistoryResponse:
+        progress = self.repository.get_user_progress_by_id(user_progress_id)
+        if not progress:
+            raise NotFoundError("User progress not found")
+        if progress.user_id != user_id:
+            raise ForbiddenError("Access denied")
+        pending = self.repository.get_pending_scene_consequence(user_progress_id)
+        if pending and pending.generation_status == "generating":
+            await self.consequence_service.complete_scene(
+                user_progress_id=user_progress_id,
+                scene_id=pending.scene_id,
+                trigger_type=pending.trigger_type,
+                turn_count=((progress.orchestrator_data or {}).get("state", {}).get("turn_count", 0)),
+                scene_progression_handler=self.scene_handler,
+            )
+        return self.get_consequence_history(user_progress_id, user_id)
+
+    async def continue_after_consequence(
+        self, user_progress_id: int, consequence_id: int, user_id: int
+    ) -> SimulationChatResponse:
+        progress = self.repository.get_user_progress_by_id(user_progress_id)
+        if not progress:
+            raise NotFoundError("User progress not found")
+        if progress.user_id != user_id:
+            raise ForbiddenError("Access denied")
+
+        orchestrator = self.orchestrator_manager.load_orchestrator(progress, user_id)
+        await self.orchestrator_manager.initialize_langchain_session(orchestrator, progress.id)
+        self.orchestrator_manager.load_orchestrator_state(orchestrator, progress)
+        result = self.consequence_service.acknowledge_and_advance(
+            consequence_id=consequence_id,
+            user_progress=progress,
+            orchestrator=orchestrator,
+            scene_progression_handler=self.scene_handler,
+            generate_scene_intro_fn=lambda scene: self.lifecycle_service.generate_scene_intro_message(
+                scene, self.repository.get_scene_by_id(scene.get("id"))
+            ),
+        )
+
+        if result.get("already_acknowledged"):
+            self.db.refresh(progress)
+            is_complete = progress.simulation_status == "completed"
+            next_scene_id = None if is_complete else progress.current_scene_id
+            next_scene = self._build_scene_payload(next_scene_id, progress.id) if next_scene_id else None
+            return SimulationChatResponse(
+                scene_id=next_scene_id,
+                scene_completed=True,
+                next_scene_id=next_scene_id,
+                next_scene=next_scene,
+                simulation_complete=is_complete,
+                consequences=self.consequence_service.list_responses(progress.id, ready_only=True),
+            )
+
+        self.orchestrator_manager.save_orchestrator_state(orchestrator, progress)
+        self.db.commit()
+
+        if result.get("simulation_complete"):
+            if progress.sandbox_id:
+                try:
+                    from common.services.sandbox_service import sandbox_service
+                    if await sandbox_service.delete_sandbox(progress.sandbox_id):
+                        progress.sandbox_id = None
+                        self.db.commit()
+                except Exception:
+                    logger.exception("Failed to clean up sandbox after final consequence")
+            return SimulationChatResponse(
+                message="Simulation complete",
+                scene_id=None,
+                scene_completed=True,
+                next_scene_id=None,
+                simulation_complete=True,
+                consequences=self.consequence_service.list_responses(progress.id, ready_only=True),
+            )
+
+        next_scene_id = result["next_scene_id"]
+        next_scene = self._build_scene_payload(next_scene_id, progress.id)
+
+        if progress.sandbox_id and next_scene and next_scene.get("scene_type") == "code_challenge":
+            data_files = next_scene.get("data_files")
+            if data_files:
+                try:
+                    from common.services.sandbox_service import sandbox_service
+                    await sandbox_service.upload_scene_data_files(progress.sandbox_id, data_files)
+                except Exception:
+                    logger.exception("Failed to upload next-scene data files")
+
+        return SimulationChatResponse(
+            message="Continue to the next scene",
+            scene_id=next_scene_id,
+            scene_completed=True,
+            next_scene_id=next_scene_id,
+            next_scene=next_scene,
+            scene_intro_message=result.get("scene_intro_message"),
+            turn_count=0,
+            consequences=self.consequence_service.list_responses(progress.id, ready_only=True),
         )
     
     async def stream_chat_message(

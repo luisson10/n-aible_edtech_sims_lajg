@@ -450,6 +450,9 @@ class LifecycleService:
         user_progress = self.repository.get_user_progress_by_id(user_progress_id)
         if not user_progress:
             raise NotFoundError("User progress not found")
+
+        from modules.simulation.services.consequence_service import ConsequenceService
+        consequence_service = ConsequenceService(self.db, self.repository)
         
         if user_progress.user_id != user_id:
             raise NotFoundError("User progress not found")  # Don't reveal it exists for different user
@@ -564,6 +567,10 @@ class LifecycleService:
             "scene_type": getattr(current_scene, 'scene_type', None) or "conversation",
             "starter_code": getattr(current_scene, 'starter_code', None),
             "data_files": getattr(current_scene, 'data_files', None),
+            "what_has_changed": [
+                item.model_dump(mode="json")
+                for item in consequence_service.what_has_changed(user_progress_id)
+            ],
         }
 
         # Get conversation history
@@ -680,5 +687,6 @@ class LifecycleService:
             turn_count=turn_count,
             completed_scene_ids=completed_scene_ids,
             sandbox_id=user_progress.sandbox_id,
+            consequences=consequence_service.list_responses(user_progress_id, ready_only=True),
+            pending_consequence=consequence_service.get_pending_response(user_progress_id),
         )
-

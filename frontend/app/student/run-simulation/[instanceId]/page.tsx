@@ -36,7 +36,8 @@ import {
   PlayCircle,
   NotebookPen,
   ListChecks,
-  Check
+  Check,
+  GitBranch
 } from "lucide-react"
 import { ChatMessages } from '@/components/ChatMessages'
 import { ChatInput } from '@/components/ChatInput'
@@ -45,6 +46,9 @@ import RoleBasedSidebar from "@/components/RoleBasedSidebar"
 import { getImageUrl } from "@/lib/image-utils"
 import dynamic from 'next/dynamic'
 import ResourcesPanel from '@/components/ResourcesPanel'
+import { ConsequenceCard } from '@/components/scene-consequence-card'
+import { ConsequenceTransitionOverlay } from '@/components/student-simulation/ConsequenceTransitionOverlay'
+import { sortConsequences, type SceneConsequence, type WhatHasChangedItem } from '@/lib/scene-consequence'
 
 const CodeEditor = dynamic(() => import('@/components/CodeEditor'), { ssr: false })
 
@@ -87,6 +91,7 @@ interface Scene {
   starter_code?: string
   data_files?: Array<{ filename: string; description?: string; preview?: { headers: string[]; rows: string[][]; totalRows?: number; totalCols?: number } }>
   reference_files?: Array<{ filename: string; description?: string; url: string }>
+  what_has_changed?: WhatHasChangedItem[]
 }
 
 interface SimulationData {
@@ -117,6 +122,8 @@ interface SimulationData {
   turn_count?: number
   completed_scene_ids?: number[]
   sandbox_id?: string
+  consequences?: SceneConsequence[]
+  pending_consequence?: SceneConsequence | null
 }
 
 interface Message {
@@ -1368,7 +1375,10 @@ export default function StudentSimulationChat() {
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0)
   const [inputMode, setInputMode] = useState<'text' | 'voice'>('text')
   const [isInterfaceGreyed, setIsInterfaceGreyed] = useState(false)
-  const [sidePanelTab, setSidePanelTab] = useState<'briefing' | 'notes'>('briefing')
+  const [sidePanelTab, setSidePanelTab] = useState<'briefing' | 'notes' | 'consequences'>('briefing')
+  const [consequences, setConsequences] = useState<SceneConsequence[]>([])
+  const [activeConsequence, setActiveConsequence] = useState<SceneConsequence | null>(null)
+  const [isContinuingConsequence, setIsContinuingConsequence] = useState(false)
   const [notes, setNotes] = useState('')
   const [briefingHasMore, setBriefingHasMore] = useState(false)
   const briefingScrollRef = useRef<HTMLDivElement>(null)
@@ -1698,6 +1708,9 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
       const data: SimulationData = await response.json()
       
       setSimulationData(data)
+      setConsequences(sortConsequences(data.consequences || []))
+      setActiveConsequence(data.pending_consequence || null)
+      if (data.pending_consequence) setInputBlocked(true)
       setAllScenes([data.current_scene])
       
       // Load turn_count immediately (for both new and resuming simulations)
@@ -1843,6 +1856,109 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
       router.push("/student/simulations")
     } finally {
       setLoadingSimulation(false)
+    }
+  }
+
+  const rememberConsequence = (consequence: SceneConsequence) => {
+    if (consequence.generation_status === 'ready') {
+      setConsequences(previous => sortConsequences([
+        ...previous.filter(item => item.id !== consequence.id),
+        consequence,
+      ]))
+    }
+    setActiveConsequence(consequence)
+    setInputBlocked(true)
+    setIsSceneTransitioning(false)
+  }
+
+  useEffect(() => {
+    if (!simulationData || activeConsequence?.generation_status !== 'generating') return
+    let cancelled = false
+    let requestInFlight = false
+    const resolvePending = async () => {
+      if (requestInFlight) return
+      requestInFlight = true
+      try {
+        const response = await apiClient.apiRequest(
+          `/api/simulation/progress/${simulationData.user_progress_id}/consequences/pending/resolve`,
+          { method: 'POST' },
+        )
+        if (!response.ok || cancelled) return
+        const result = await response.json()
+        setConsequences(sortConsequences(result.consequences || []))
+        if (result.pending_consequence) setActiveConsequence(result.pending_consequence)
+      } catch {
+        // The next poll retries; a generation failure is finalized server-side as a neutral fallback.
+      } finally {
+        requestInFlight = false
+      }
+    }
+    resolvePending()
+    const timer = window.setInterval(resolvePending, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [activeConsequence?.id, activeConsequence?.generation_status, simulationData?.user_progress_id])
+
+  const handleContinueFromConsequence = async () => {
+    if (!simulationData || !activeConsequence || activeConsequence.generation_status !== 'ready') return
+    setIsContinuingConsequence(true)
+    try {
+      const response = await apiClient.apiRequest(
+        `/api/simulation/progress/${simulationData.user_progress_id}/consequences/${activeConsequence.id}/continue`,
+        { method: 'POST' },
+      )
+      if (!response.ok) throw new Error('Could not continue the simulation')
+      const data = await response.json()
+      setConsequences(sortConsequences(data.consequences || consequences))
+      setActiveConsequence(null)
+
+      if (data.simulation_complete) {
+        setSimulationComplete(true)
+        setInputBlocked(true)
+        setGradingInProgress(true)
+        await fetchGradingData(false, true)
+        setGradingInProgress(false)
+        return
+      }
+
+      if (data.next_scene) {
+        setCompletedScenes(previous => previous.includes(activeConsequence.scene_id)
+          ? previous
+          : [...previous, activeConsequence.scene_id])
+        setSimulationData(previous => previous ? {
+          ...previous,
+          current_scene: data.next_scene,
+          simulation_status: 'in_progress',
+        } : null)
+        addSceneIfMissing(data.next_scene)
+        setTurnCount(0)
+        setHasSubmittedForGrading(false)
+        setCanSubmitForGrading(true)
+        setInputBlocked(false)
+        setCurrentTurnStartIndex(messages.length)
+        setShowAllMessages(false)
+        if (data.scene_intro_message) {
+          setMessages(previous => [...previous, {
+            id: nextMessageId(),
+            sender: 'System',
+            text: data.scene_intro_message,
+            timestamp: new Date(),
+            type: 'system',
+          }])
+        }
+      }
+    } catch (error) {
+      setMessages(previous => [...previous, {
+        id: nextMessageId(),
+        sender: 'System',
+        text: `We could not continue yet. Your consequence is saved; please try again.`,
+        timestamp: new Date(),
+        type: 'system',
+      }])
+    } finally {
+      setIsContinuingConsequence(false)
     }
   }
 
@@ -2382,6 +2498,14 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
           simulationData.current_scene &&
           simulationData.current_scene.id === allScenes[allScenes.length - 1].id
           
+          if (chatData.awaiting_consequence_ack && chatData.consequence) {
+            rememberConsequence(chatData.consequence as SceneConsequence)
+            setCompletedScenes(previous => previous.includes(simulationData.current_scene.id)
+              ? previous
+              : [...previous, simulationData.current_scene.id])
+            return
+          }
+
           if (chatData.scene_completed) {
             // Show loading screen for scene transition
             setIsSceneTransitioning(true)
@@ -2744,6 +2868,14 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
       }
 
       const data = await response.json()
+
+      if (data.awaiting_consequence_ack && data.consequence) {
+        rememberConsequence(data.consequence as SceneConsequence)
+        setCompletedScenes(previous => previous.includes(simulationData!.current_scene.id)
+          ? previous
+          : [...previous, simulationData!.current_scene.id])
+        return
+      }
       
       if (data.scene_completed) {
         if (data.next_scene_id) {
@@ -3042,7 +3174,7 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
       <div className="flex-1 ml-20 flex overflow-hidden min-w-0 max-md:flex-col max-md:overflow-visible">
 
       {/* ── GUIDANCE PANEL ─────────────────────────────────────────────────── */}
-      <aside className="w-[22rem] flex-shrink-0 bg-card text-card-foreground flex flex-col overflow-hidden max-lg:w-72 max-md:h-auto max-md:min-h-[28rem] max-md:w-full max-md:overflow-visible">
+      <aside className="h-full min-h-0 w-[22rem] flex-shrink-0 bg-card text-card-foreground flex flex-col overflow-hidden max-lg:w-72 max-md:h-auto max-md:min-h-[28rem] max-md:w-full max-md:overflow-visible">
         <div className="px-4 pt-4 pb-3 flex-shrink-0">
           <button
             onClick={() => router.push("/student/simulations")}
@@ -3062,22 +3194,31 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
 
         <Tabs
           value={sidePanelTab}
-          onValueChange={(value) => setSidePanelTab(value as 'briefing' | 'notes')}
-          className="flex flex-1 min-h-0 flex-col"
+          onValueChange={(value) => setSidePanelTab(value as 'briefing' | 'notes' | 'consequences')}
+          className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden max-md:h-[28rem] max-md:flex-none"
         >
-          <TabsList className="grid h-auto grid-cols-2 gap-1 mx-4 p-1 bg-muted/50 text-muted-foreground">
+          <TabsList className="mx-4 grid h-auto grid-cols-[1fr_0.8fr_1.3fr] gap-1 bg-muted/50 p-1 text-muted-foreground">
             <TabsTrigger value="briefing" className="gap-1.5 text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-card-foreground">
               <ListChecks className="w-4 h-4" /> Briefing
             </TabsTrigger>
             <TabsTrigger value="notes" className="gap-1.5 text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-card-foreground">
               <NotebookPen className="w-4 h-4" /> Notes
             </TabsTrigger>
+            <TabsTrigger value="consequences" className="gap-1 text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-card-foreground">
+              <GitBranch className="h-4 w-4 max-lg:hidden" aria-hidden="true" />
+              <span className="text-xs">Consequences</span>
+              {consequences.length > 0 && (
+                <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1.5 text-[0.6875rem]">
+                  {consequences.length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
-          <TabsContent value="briefing" className="relative m-0 flex-1 min-h-0 overflow-hidden p-4">
+          <TabsContent value="briefing" className="relative m-0 hidden h-0 min-h-0 flex-1 flex-col overflow-hidden p-4 data-[state=active]:flex">
             <div
               ref={briefingScrollRef}
               onScroll={(event) => setBriefingHasMore(event.currentTarget.scrollHeight - event.currentTarget.scrollTop > event.currentTarget.clientHeight + 4)}
-              className="guidance-scroll h-full overflow-y-scroll space-y-4 pr-3"
+              className="guidance-scroll min-h-0 flex-1 overflow-y-scroll space-y-4 pr-3"
               tabIndex={0}
               aria-label="Mission briefing details"
             >
@@ -3097,6 +3238,22 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
                   <h2 className="text-xs font-semibold uppercase tracking-wide">Your objective</h2>
                 </div>
                 <p className="text-sm leading-relaxed text-card-foreground">{simulationData.current_scene.user_goal}</p>
+              </section>
+            )}
+
+            {simulationData.current_scene.what_has_changed && simulationData.current_scene.what_has_changed.length > 0 && (
+              <section className="rounded-xl border border-border bg-surface-subtle p-4">
+                <div className="mb-2 flex items-center gap-2 text-card-foreground">
+                  <GitBranch className="h-4 w-4 text-primary" aria-hidden="true" />
+                  <h2 className="text-xs font-semibold uppercase tracking-wide">What has changed</h2>
+                </div>
+                <ul className="space-y-3">
+                  {simulationData.current_scene.what_has_changed.map(item => (
+                    <li key={item.scene_id} className="text-sm leading-relaxed text-muted-foreground">
+                      <span className="font-medium text-card-foreground">{item.scene_title}:</span> {item.summary}
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
 
@@ -3128,7 +3285,7 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
               </div>
             )}
           </TabsContent>
-          <TabsContent value="notes" className="m-0 flex-1 min-h-[20rem] p-4 flex flex-col max-md:min-h-[24rem]">
+          <TabsContent value="notes" className="m-0 hidden h-0 min-h-0 flex-1 flex-col p-4 data-[state=active]:flex">
             <div className="mb-3">
               <h2 className="font-heading font-semibold">Field notes</h2>
               <p className="text-xs text-muted-foreground mt-1">Private notes are saved on this device for this simulation.</p>
@@ -3141,6 +3298,23 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
               className="flex-1 min-h-48 resize-none rounded-xl border border-border bg-muted/50 p-3 text-sm leading-relaxed text-card-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <p className="mt-2 text-xs text-muted-foreground">Saved automatically</p>
+          </TabsContent>
+          <TabsContent value="consequences" className="m-0 hidden h-0 min-h-0 flex-1 flex-col p-4 data-[state=active]:flex">
+            <div className="mb-3">
+              <h2 className="font-heading font-semibold">Consequences</h2>
+              <p className="mt-1 text-xs text-muted-foreground">How your completed interactions shaped the situation.</p>
+            </div>
+            <div className="guidance-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-2" tabIndex={0} aria-label="Completed scene consequences">
+              {consequences.length > 0 ? consequences.map(consequence => (
+                <ConsequenceCard key={consequence.id} consequence={consequence} compact />
+              )) : (
+                <div className="rounded-xl border border-dashed border-border bg-surface-subtle p-5 text-center">
+                  <GitBranch className="mx-auto h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  <p className="mt-2 text-sm font-medium">No consequences yet</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Complete a scene to see how your decisions influenced what happened next.</p>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </aside>
@@ -3159,13 +3333,29 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
         {/* Overlay */}
         <div className="absolute inset-0 bg-background/60" />
 
+        {activeConsequence && (
+          <ConsequenceTransitionOverlay
+            consequence={activeConsequence}
+            isFinalScene={currentScenePosition >= totalScenes}
+            isContinuing={isContinuingConsequence}
+            onContinue={handleContinueFromConsequence}
+          />
+        )}
+
         {/* Content */}
         <div className="relative z-10 flex flex-col h-full max-md:min-h-[100svh]">
 
           {/* Runtime header: conversation is the default experience; assessment appears only after completion. */}
           {(simulationHasBegun || simulationComplete) && (
-            <header className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 border-b border-border bg-card/95 px-4 py-3 text-card-foreground backdrop-blur-md">
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+            <header className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card/95 px-4 py-3 text-card-foreground backdrop-blur-md">
+              <h2
+                id="current-scene-title"
+                className="min-w-0 basis-48 flex-1 truncate text-left font-heading text-sm font-semibold text-card-foreground max-sm:basis-full"
+                title={simulationData.current_scene.title}
+              >
+                {simulationData.current_scene.title}
+              </h2>
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:w-full">
                 {simulationData.current_scene.scene_type === 'code_challenge' && (
                   <>
                     <Button variant="ghost" size="sm" onClick={() => setActiveTab(activeTab === 'code-editor' ? 'conversation' : 'code-editor')} className="text-muted-foreground hover:text-foreground hover:bg-muted">
@@ -3175,9 +3365,6 @@ ${availablePersonas.map(persona => `• @${getPersonaHandle(persona)}: ${persona
                   </>
                 )}
                 <section className="ml-auto w-[min(24rem,48vw)] min-w-44 max-sm:w-full" aria-labelledby="current-scene-title" aria-describedby="scene-progress-label">
-                  <h2 id="current-scene-title" className="mb-1 truncate text-right font-heading text-sm font-semibold text-card-foreground" title={simulationData.current_scene.title}>
-                    {simulationData.current_scene.title}
-                  </h2>
                   <div id="scene-progress-label" className="mb-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                     <span>Scene progress</span>
                     <span>{currentScenePosition}/{totalScenes}</span>

@@ -11,7 +11,7 @@ from sqlalchemy import and_, desc, text
 from common.db.models import (
     Simulation, SimulationScene, SimulationPersona, UserProgress, SceneProgress,
     ConversationLog, AgentSessions, SessionMemory, ConversationSummaries,
-    StudentSimulationInstance, scene_personas
+    StudentSimulationInstance, SceneConsequence, scene_personas
 )
 
 
@@ -130,6 +130,10 @@ class SimulationRepository:
             text("DELETE FROM conversation_summaries WHERE user_progress_id = :id"),
             {"id": user_progress_id}
         )
+        self.db.execute(
+            text("DELETE FROM scene_consequences WHERE user_progress_id = :id"),
+            {"id": user_progress_id}
+        )
         # DO NOT delete student_simulation_instances here - they should persist even when user_progress is reset
         # StudentSimulationInstance tracks assignment status, grades, and is linked to cohort assignments
         # Only clear the user_progress_id reference, don't delete the instance
@@ -178,6 +182,58 @@ class SimulationRepository:
         self.db.add(scene_progress)
         self.db.flush()
         return scene_progress
+
+    def get_scene_consequence(
+        self, user_progress_id: int, scene_id: int, *, for_update: bool = False
+    ) -> Optional[SceneConsequence]:
+        """Get the canonical consequence for a completed scene."""
+        query = self.db.query(SceneConsequence).filter(
+            SceneConsequence.user_progress_id == user_progress_id,
+            SceneConsequence.scene_id == scene_id,
+        )
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
+
+    def get_scene_consequence_by_id(
+        self, consequence_id: int, *, for_update: bool = False
+    ) -> Optional[SceneConsequence]:
+        query = self.db.query(SceneConsequence).filter(SceneConsequence.id == consequence_id)
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
+
+    def list_scene_consequences(
+        self,
+        user_progress_id: int,
+        *,
+        ready_only: bool = False,
+        acknowledged_only: bool = False,
+    ) -> List[SceneConsequence]:
+        query = (
+            self.db.query(SceneConsequence)
+            .join(SimulationScene, SimulationScene.id == SceneConsequence.scene_id)
+            .filter(SceneConsequence.user_progress_id == user_progress_id)
+        )
+        if ready_only:
+            query = query.filter(SceneConsequence.generation_status == "ready")
+        if acknowledged_only:
+            query = query.filter(SceneConsequence.acknowledged_at.isnot(None))
+        return query.order_by(SimulationScene.scene_order, SceneConsequence.id).all()
+
+    def get_pending_scene_consequence(
+        self, user_progress_id: int
+    ) -> Optional[SceneConsequence]:
+        return (
+            self.db.query(SceneConsequence)
+            .join(SimulationScene, SimulationScene.id == SceneConsequence.scene_id)
+            .filter(
+                SceneConsequence.user_progress_id == user_progress_id,
+                SceneConsequence.acknowledged_at.is_(None),
+            )
+            .order_by(SimulationScene.scene_order.desc(), SceneConsequence.id.desc())
+            .first()
+        )
     
     def get_conversation_logs(
         self,

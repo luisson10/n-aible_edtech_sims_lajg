@@ -927,6 +927,12 @@ async def start_simulation_from_instance(
             "turn_count": result.turn_count if hasattr(result, 'turn_count') else 0,
             "completed_scene_ids": result.completed_scene_ids if hasattr(result, 'completed_scene_ids') else [],
             "sandbox_id": result.sandbox_id if hasattr(result, 'sandbox_id') else None,
+            "consequences": [item.model_dump(mode="json") for item in getattr(result, 'consequences', [])],
+            "pending_consequence": (
+                result.pending_consequence.model_dump(mode="json")
+                if getattr(result, 'pending_consequence', None)
+                else None
+            ),
         }
         
     except HTTPException:

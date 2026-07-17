@@ -49,6 +49,7 @@ async def get_submission_details(
         
         # Get user progress and conversation logs
         conversation_history = []
+        consequences = []
         current_scene_data = None
         all_scenes_data = []
         simulation_data = None
@@ -59,8 +60,14 @@ async def get_submission_details(
             ).first()
             
             if user_progress:
-                # Get simulation
                 from modules.simulation.repository import SimulationRepository
+                from modules.simulation.services.consequence_service import ConsequenceService
+                consequence_service = ConsequenceService(db, SimulationRepository(db))
+                consequences = [
+                    item.model_dump(mode="json")
+                    for item in consequence_service.list_responses(user_progress.id, ready_only=True)
+                ]
+                # Get simulation
                 from common.db.models import Simulation, SimulationScene, SimulationPersona
                 repo = SimulationRepository(db)
                 
@@ -180,6 +187,7 @@ async def get_submission_details(
             "graded_at": instance.graded_at.isoformat() if instance.graded_at else None,
             "grade_status": instance.grade_status,
             "conversation_history": conversation_history,
+            "consequences": consequences,
             "user_progress_id": instance.user_progress_id,
             "current_scene": current_scene_data,
             "all_scenes": all_scenes_data,

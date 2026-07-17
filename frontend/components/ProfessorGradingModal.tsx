@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { apiClient } from "@/lib/api"
 import { getImageUrl } from "@/lib/image-utils"
+import { ConsequenceCard } from "@/components/scene-consequence-card"
+import { sortConsequences, type SceneConsequence } from "@/lib/scene-consequence"
 
 interface ProfessorGradingModalProps {
   isOpen: boolean
@@ -17,6 +19,7 @@ interface ProfessorGradingModalProps {
 
 interface ConversationMessage {
   id: number
+  message_order?: number
   type: string
   sender: string
   content: string
@@ -317,6 +320,7 @@ export default function ProfessorGradingModal({
   // Map conversation history to match expected format
   const conversationHistory: ConversationMessage[] = (submissionData?.conversation_history || []).map((msg: any) => ({
     id: msg.id,
+    message_order: msg.message_order,
     type: msg.message_type || msg.type || 'system',
     sender: msg.sender_name || msg.sender || 'System',
     content: msg.message_content || msg.content || msg.text || '',
@@ -325,6 +329,7 @@ export default function ProfessorGradingModal({
     persona_name: msg.persona_name,
     persona_role: msg.persona_role
   }))
+  const consequences = sortConsequences((submissionData?.consequences || []) as SceneConsequence[])
   const currentScene = submissionData?.current_scene
   const simulation = submissionData?.simulation || submissionData?.scenario  // Support both for backward compatibility
   const allScenes = submissionData?.all_scenes || []
@@ -574,21 +579,25 @@ export default function ProfessorGradingModal({
                   {conversationHistory.map((msg: ConversationMessage) => {
                     const isUser = msg.type === 'user'
                     const isSystem = msg.type === 'system' || msg.type === 'orchestrator'
+                    const boundaryConsequences = consequences.filter(
+                      consequence => consequence.source_message_order === msg.message_order,
+                    )
                     
                     return (
                       <div
                         key={msg.id}
-                        className={`flex ${isUser ? 'justify-end' : 'justify-start'} transition-all duration-300`}
+                        className="space-y-4"
                       >
-                        <div className={`max-w-md px-4 py-3 rounded-lg transition-all duration-300 ${
-                          isUser
-                            ? 'sim-message-user text-white'
-                            : isSystem
-                            ? 'bg-gray-100 text-gray-800 border border-gray-200'
-                            : `sim-message-persona ${getPersonaBubbleClasses(msg.persona_name || msg.sender)} text-gray-800 border`
-                        }`} style={{ 
-                          fontFamily: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif"
-                        }}>
+                        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} transition-all duration-300`}>
+                          <div className={`max-w-md px-4 py-3 rounded-lg transition-all duration-300 ${
+                            isUser
+                              ? 'sim-message-user text-white'
+                              : isSystem
+                              ? 'bg-gray-100 text-gray-800 border border-gray-200'
+                              : `sim-message-persona ${getPersonaBubbleClasses(msg.persona_name || msg.sender)} text-gray-800 border`
+                          }`} style={{
+                            fontFamily: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif"
+                          }}>
                           <div className="flex items-center gap-2 mb-1.5">
                             {!isUser && !isSystem && (
                               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-[11px] flex items-center justify-center text-white font-semibold shadow-sm overflow-hidden">
@@ -647,10 +656,23 @@ export default function ProfessorGradingModal({
                               {new Date(msg.timestamp).toLocaleTimeString()}
                             </p>
                           )}
+                          </div>
                         </div>
+                        {boundaryConsequences.map(consequence => (
+                          <div key={`consequence-${consequence.id}`} className="mx-auto max-w-2xl">
+                            <ConsequenceCard consequence={consequence} compact />
+                          </div>
+                        ))}
                       </div>
                     )
                   })}
+                  {consequences
+                    .filter(consequence => consequence.source_message_order === 0)
+                    .map(consequence => (
+                      <div key={`consequence-${consequence.id}`} className="mx-auto max-w-2xl">
+                        <ConsequenceCard consequence={consequence} compact />
+                      </div>
+                    ))}
                   <div ref={chatEndRef} />
                 </div>
               </div>

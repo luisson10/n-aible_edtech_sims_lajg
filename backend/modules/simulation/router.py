@@ -21,6 +21,7 @@ from modules.simulation.schemas.dto import (
     SaveMessageRequest, CodeExecutionRequest, CodeExecutionResponse,
     SandboxStateResponse,
 )
+from modules.simulation.schemas.consequence_schemas import ConsequenceHistoryResponse
 from common.services.simulation_queue_service import (
     enqueue_simulation_request,
     enqueue_grading_request,
@@ -189,6 +190,65 @@ async def linear_chat(
     except Exception:
         logger.exception("Failed to process chat message", extra={"user_id": current_user.id, "user_progress_id": request.user_progress_id, "scene_id": request.scene_id})
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/progress/{user_progress_id}/consequences",
+    response_model=ConsequenceHistoryResponse,
+)
+async def get_consequences(
+    user_progress_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    service = SimulationService(db)
+    try:
+        return service.get_consequence_history(user_progress_id, current_user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post(
+    "/progress/{user_progress_id}/consequences/pending/resolve",
+    response_model=ConsequenceHistoryResponse,
+)
+async def resolve_pending_consequence(
+    user_progress_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    service = SimulationService(db)
+    try:
+        return await service.resolve_pending_consequence(user_progress_id, current_user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post(
+    "/progress/{user_progress_id}/consequences/{consequence_id}/continue",
+    response_model=SimulationChatResponse,
+)
+async def continue_after_consequence(
+    user_progress_id: int,
+    consequence_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    service = SimulationService(db)
+    try:
+        return await service.continue_after_consequence(
+            user_progress_id, consequence_id, current_user.id
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/scenes/{scene_id}", response_model=SimulationSceneResponse)
